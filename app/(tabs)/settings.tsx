@@ -7,7 +7,7 @@ import Animated, { FadeInUp, FadeIn, useSharedValue, useAnimatedStyle, withTimin
 import GlassCard from '../../components/ui/GlassCard';
 import AnimatedButton from '../../components/ui/AnimatedButton';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
-import IndianFlag from '../../components/ui/IndianFlag';
+import IndianFlag from '@/components/ui/IndianFlag';
 import { Colors, Typography, FontSizes, BorderRadius, Shadows } from '../../constants/theme';
 import { storageService, User } from '../../services/storageService';
 import { t, getLocale, setLocale, addLocaleListener } from '../../services/i18n';

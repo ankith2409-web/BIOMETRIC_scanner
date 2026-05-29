@@ -29,7 +29,7 @@ import LandmarkDots from '../components/camera/LandmarkDots';
 import AnimatedButton from '../components/ui/AnimatedButton';
 import ArchitectureIcon from '../components/ui/ArchitectureIcons';
 import GlassCard from '../components/ui/GlassCard';
-import IndianFlag from '../components/ui/IndianFlag';
+import IndianFlag from '@/components/ui/IndianFlag';
 import LivenessPrompt from '../components/camera/LivenessPrompt';
 import LightingIndicator from '../components/camera/LightingIndicator';
 import { BorderRadius, Colors, FontSizes, Shadows, Typography } from '../constants/theme';
