@@ -16,6 +16,11 @@ export const Colors = {
   accentDim: 'rgba(0, 212, 255, 0.15)',
   accentGlow: 'rgba(0, 212, 255, 0.3)',
   
+  // Secondary accent (violet)
+  secondary: '#7C5CFC',
+  secondaryDim: 'rgba(124, 92, 252, 0.15)',
+  secondaryGlow: 'rgba(124, 92, 252, 0.3)',
+  
   // Status colors
   success: '#00FF88',
   successDim: 'rgba(0, 255, 136, 0.15)',
@@ -39,6 +44,7 @@ export const Colors = {
   borderAccent: 'rgba(0, 212, 255, 0.2)',
   borderSuccess: 'rgba(0, 255, 136, 0.2)',
   borderDanger: 'rgba(255, 59, 92, 0.2)',
+  borderSecondary: 'rgba(124, 92, 252, 0.2)',
   
   // Glassmorphism
   glassBg: 'rgba(15, 22, 41, 0.7)',

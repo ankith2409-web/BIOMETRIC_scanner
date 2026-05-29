@@ -8,7 +8,10 @@
     "scheme": "nhai",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "FaceGate uses camera for offline face authentication."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -17,15 +20,24 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "CAMERA"
+      ]
     },
     "web": {
       "bundler": "metro",
-      "output": "static",
+      "output": "single",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
       "expo-router",
+      [
+        "react-native-vision-camera",
+        {
+          "cameraPermissionText": "FaceGate needs camera access for offline face recognition."
+        }
+      ],
       [
         "expo-splash-screen",
         {

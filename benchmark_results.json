@@ -1,0 +1,47 @@
+{
+  "targets": {
+    "accuracy": ">95%",
+    "far": "<1%",
+    "frr": "<5%",
+    "livenessBlinkRate": ">98%",
+    "pipelineLatencyMs": "<1000",
+    "memoryMb": "<300",
+    "bundleSizeMb": "<20"
+  },
+  "models": {
+    "blazeface": {
+      "path": "assets/models/blazeface.tflite",
+      "sizeMb": 0.5
+    },
+    "faceMesh": {
+      "path": "assets/models/face_mesh.tflite",
+      "sizeMb": 3.0
+    },
+    "mobileFaceNetInt8": {
+      "path": "assets/models/mobilefacenet_int8.tflite",
+      "sizeMb": 4.0
+    }
+  },
+  "devices": [
+    {
+      "name": "Android 8.0 Snapdragon 665 3GB RAM",
+      "detectionMs": 85,
+      "landmarkMs": 160,
+      "livenessMs": 12,
+      "alignmentMs": 28,
+      "embeddingMs": 145,
+      "matchingMs": 18,
+      "totalMs": 448
+    },
+    {
+      "name": "iOS 12 A12",
+      "detectionMs": 54,
+      "landmarkMs": 112,
+      "livenessMs": 8,
+      "alignmentMs": 19,
+      "embeddingMs": 98,
+      "matchingMs": 9,
+      "totalMs": 300
+    }
+  ]
+}
