@@ -469,17 +469,7 @@ export default function LoginScreen() {
 
       const smoothedEmbedding = computeCentroid(recentEmbeddings.current);
       const threshold = storageService.getSettings().threshold;
-      let match = matchEmbedding(smoothedEmbedding, userGallery, threshold);
-
-      // Lenient matching mode: if liveness is passed, force a match to matchedUser
-      if (!match.matched && livenessPassedRef.current && userGallery.length > 0) {
-        match = {
-          matched: true,
-          userId: matchedUser.id,
-          name: matchedUser.name,
-          confidence: 0.96, // High confidence for mock match
-        };
-      }
+      const match = matchEmbedding(smoothedEmbedding, userGallery, threshold);
 
       if (match.matched) {
         // Log in successful!
