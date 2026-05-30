@@ -160,6 +160,205 @@ function DateBadge({ dateString }: { dateString: string }) {
   }
 }
 
+function CalendarGrid({ logs }: { logs: AttendanceRecord[] }) {
+  const [selectedDayInfo, setSelectedDayInfo] = useState<string | null>(null);
+
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = today.getMonth(); // 0-indexed
+  
+  // Total days in the current month
+  const totalDays = new Date(year, month + 1, 0).getDate();
+  // Day of week for the 1st of the month
+  const firstDayIndex = new Date(year, month, 1).getDay();
+
+  const daysOfWeek = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+  // Construct grid cells
+  const cells: Array<{ day: number | null; dateStr: string; status: 'future' | 'absent' | 'checkIn' | 'checkOut' | 'completed'; record?: AttendanceRecord }> = [];
+
+  // Pad cells before the 1st day of the month
+  for (let i = 0; i < firstDayIndex; i++) {
+    cells.push({ day: null, dateStr: '', status: 'future' });
+  }
+
+  const todayStr = today.toISOString().split('T')[0];
+
+  for (let d = 1; d <= totalDays; d++) {
+    const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    
+    // Check if future day
+    const isFuture = dStr > todayStr;
+    
+    // Find record
+    const record = logs.find(r => r.date === dStr);
+    
+    let status: 'future' | 'absent' | 'checkIn' | 'checkOut' | 'completed' = 'absent';
+    if (isFuture) {
+      status = 'future';
+    } else if (record) {
+      if (record.checkIn && record.checkOut) {
+        status = 'completed';
+      } else if (record.checkIn) {
+        status = 'checkIn';
+      } else if (record.checkOut) {
+        status = 'checkOut';
+      }
+    }
+
+    cells.push({
+      day: d,
+      dateStr: dStr,
+      status,
+      record
+    });
+  }
+
+  // Get color for status
+  const getCellColor = (status: string) => {
+    switch (status) {
+      case 'completed': return Colors.successDim; // Green background tint
+      case 'checkIn': return Colors.accentDim; // Blue/Cyan background tint
+      case 'checkOut': return Colors.secondaryDim; // Purple background tint
+      case 'absent': return 'rgba(255, 69, 58, 0.08)'; // Dim red background tint
+      case 'future':
+      default:
+        return 'rgba(255, 255, 255, 0.02)'; // Dark transparent
+    }
+  };
+
+  const getBorderColor = (status: string) => {
+    switch (status) {
+      case 'completed': return Colors.success;
+      case 'checkIn': return Colors.accent;
+      case 'checkOut': return Colors.secondary;
+      case 'absent': return Colors.danger;
+      case 'future':
+      default:
+        return 'rgba(255, 255, 255, 0.06)';
+    }
+  };
+
+  const handleCellPress = (cell: typeof cells[0]) => {
+    if (!cell.day || cell.status === 'future') return;
+    
+    const formattedDate = new Date(cell.dateStr).toLocaleDateString(undefined, {
+      month: 'short', day: 'numeric'
+    });
+
+    if (cell.status === 'absent') {
+      setSelectedDayInfo(`${formattedDate}: ${t('legendAbsent') || 'Absent'}`);
+    } else if (cell.record) {
+      const inTime = cell.record.checkIn || '--:--';
+      const outTime = cell.record.checkOut || t('haventMarkedOut') || 'In Progress';
+      setSelectedDayInfo(`${formattedDate}: 📥 ${inTime} 📤 ${outTime}`);
+    }
+  };
+
+  // Chunk cells into rows of 7
+  const rows: typeof cells[] = [];
+  let currentRow: typeof cells = [];
+  cells.forEach((cell, idx) => {
+    currentRow.push(cell);
+    if (currentRow.length === 7 || idx === cells.length - 1) {
+      if (idx === cells.length - 1) {
+        while (currentRow.length < 7) {
+          currentRow.push({ day: null, dateStr: '', status: 'future' });
+        }
+      }
+      rows.push(currentRow);
+      currentRow = [];
+    }
+  });
+
+  return (
+    <View style={styles.calendarContainer}>
+      <Text style={styles.calendarSectionTitle}>{t('attendanceCalendar') || 'Attendance Calendar'}</Text>
+      
+      {/* Month Header */}
+      <Text style={styles.calendarMonthText}>
+        {today.toLocaleString('en-US', { month: 'long', year: 'numeric' })}
+      </Text>
+
+      <View style={styles.calendarFlexContainer}>
+        {/* Calendar Grid Area */}
+        <View style={styles.gridArea}>
+          {/* Weekday headers */}
+          <View style={styles.calendarWeekdaysRow}>
+            {daysOfWeek.map((day, idx) => (
+              <Text key={`weekday-${idx}`} style={styles.weekdayHeaderText}>{day}</Text>
+            ))}
+          </View>
+
+          {/* Grid rows */}
+          {rows.map((row, rowIdx) => (
+            <View key={`row-${rowIdx}`} style={styles.calendarGridRow}>
+              {row.map((cell, cellIdx) => {
+                const hasDetails = cell.day !== null && cell.status !== 'future';
+                return (
+                  <Pressable
+                    key={`cell-${rowIdx}-${cellIdx}`}
+                    onPress={() => handleCellPress(cell)}
+                    disabled={!hasDetails}
+                    style={({ pressed }) => [
+                      styles.calendarCell,
+                      {
+                        backgroundColor: getCellColor(cell.status),
+                        borderColor: getBorderColor(cell.status),
+                      },
+                      pressed && { opacity: 0.7 }
+                    ]}
+                  >
+                    {cell.day && (
+                      <Text style={[
+                        styles.calendarCellText,
+                        cell.status === 'future' && { color: Colors.textTertiary }
+                      ]}>
+                        {cell.day}
+                      </Text>
+                    )}
+                  </Pressable>
+                );
+              })}
+            </View>
+          ))}
+        </View>
+
+        {/* Vertical Legend Column on the side */}
+        <View style={styles.legendContainer}>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendIndicator, { backgroundColor: Colors.successDim, borderColor: Colors.success }]} />
+            <Text style={styles.legendLabelText}>{t('legendCompleted') || 'Completed'}</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendIndicator, { backgroundColor: Colors.accentDim, borderColor: Colors.accent }]} />
+            <Text style={styles.legendLabelText}>{t('legendCheckedIn') || 'Checked In'}</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendIndicator, { backgroundColor: Colors.secondaryDim, borderColor: Colors.secondary }]} />
+            <Text style={styles.legendLabelText}>{t('legendCheckedOut') || 'Checked Out'}</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={[styles.legendIndicator, { backgroundColor: 'rgba(255, 69, 58, 0.08)', borderColor: Colors.danger }]} />
+            <Text style={styles.legendLabelText}>{t('legendAbsent') || 'Absent'}</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Selected Day Tooltip */}
+      {selectedDayInfo && (
+        <View style={styles.selectedDayInfoBox}>
+          <MaterialCommunityIcons name="information-outline" size={14} color={Colors.accent} style={{ marginRight: 6 }} />
+          <Text style={styles.selectedDayInfoText}>{selectedDayInfo}</Text>
+          <Pressable onPress={() => setSelectedDayInfo(null)} style={styles.selectedDayCloseBtn}>
+            <MaterialCommunityIcons name="close" size={14} color={Colors.textSecondary} />
+          </Pressable>
+        </View>
+      )}
+    </View>
+  );
+}
+
 export default function AttendanceScreen() {
   const router = useRouter();
   const navigation = useNavigation();
@@ -439,6 +638,10 @@ export default function AttendanceScreen() {
             <View style={[styles.cardHeader, { marginBottom: 12 }]}>
               <Text style={styles.cardTitle}>{t('myAttendanceReport')}</Text>
             </View>
+
+            {/* Attendance Calendar Grid */}
+            <CalendarGrid logs={attendanceLogs} />
+            <View style={styles.reportSectionDivider} />
             
             {attendanceLogs.length === 0 ? (
               <Text style={styles.emptyReportText}>No previous attendance history found.</Text>
@@ -953,5 +1156,119 @@ const styles = StyleSheet.create({
     ...Typography.body,
     fontSize: FontSizes.md,
     color: Colors.textTertiary,
+  },
+  // Calendar Grid styles
+  calendarContainer: {
+    backgroundColor: 'rgba(255, 255, 255, 0.02)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.05)',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+  },
+  calendarSectionTitle: {
+    ...Typography.bodySemiBold,
+    fontSize: FontSizes.xs,
+    color: Colors.textSecondary,
+    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  calendarMonthText: {
+    ...Typography.heading,
+    fontSize: FontSizes.sm,
+    color: Colors.textPrimary,
+    marginBottom: 12,
+  },
+  calendarFlexContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  gridArea: {
+    flex: 2.2,
+  },
+  calendarWeekdaysRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  weekdayHeaderText: {
+    width: 24,
+    textAlign: 'center',
+    ...Typography.bodySemiBold,
+    fontSize: 9,
+    color: Colors.textTertiary,
+  },
+  calendarGridRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  calendarCell: {
+    width: 24,
+    height: 24,
+    borderRadius: 4,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calendarCellText: {
+    ...Typography.bodySemiBold,
+    fontSize: 9,
+    color: Colors.textPrimary,
+  },
+  legendContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    gap: 8,
+    borderLeftWidth: 1,
+    borderLeftColor: 'rgba(255, 255, 255, 0.05)',
+    paddingLeft: 12,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  legendIndicator: {
+    width: 12,
+    height: 12,
+    borderRadius: 3,
+    borderWidth: 1,
+  },
+  legendLabelText: {
+    ...Typography.body,
+    fontSize: 9,
+    color: Colors.textSecondary,
+  },
+  selectedDayInfoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 212, 255, 0.06)',
+    borderWidth: 1,
+    borderColor: Colors.borderAccent,
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginTop: 12,
+    position: 'relative',
+  },
+  selectedDayInfoText: {
+    ...Typography.bodyMedium,
+    fontSize: 11,
+    color: Colors.textPrimary,
+    flex: 1,
+    paddingRight: 16,
+  },
+  selectedDayCloseBtn: {
+    position: 'absolute',
+    right: 8,
+    top: 8,
+  },
+  reportSectionDivider: {
+    height: 1,
+    backgroundColor: Colors.borderDefault,
+    marginVertical: 14,
   },
 });
