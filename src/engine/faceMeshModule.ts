@@ -56,9 +56,13 @@ const dist = (p1: { x: number; y: number }, p2: { x: number; y: number }): numbe
 
 export class FaceMeshModule {
   private neutralMouthWidth: number | null = null;
+  private initialNoseCropX: number | null = null;
+  private headTurnPassed = false;
 
   reset(): void {
     this.neutralMouthWidth = null;
+    this.initialNoseCropX = null;
+    this.headTurnPassed = false;
   }
 
   /**
@@ -236,22 +240,34 @@ export class FaceMeshModule {
     const avgEAR = (earLeft + earRight) / 2;
     const blinkDetected = avgEAR < 0.2;
 
-    // Calculate Smile (Mouth corner distance increase >15%)
-    const curMouthWidth = dist(mouthLeft, mouthRight);
+    // Calculate Smile (Mouth corner distance normalized by eye distance to be scale-invariant)
+    const mouthWidthPx = dist(
+      { x: mouthLeft.x * 640, y: mouthLeft.y * 480 },
+      { x: mouthRight.x * 640, y: mouthRight.y * 480 }
+    );
+    const normalizedMouthWidth = eyeDistance > 0 ? mouthWidthPx / eyeDistance : 0;
+
     if (this.neutralMouthWidth === null) {
-      this.neutralMouthWidth = curMouthWidth;
+      this.neutralMouthWidth = normalizedMouthWidth;
     } else {
       // Slowly adapt baseline to represent the neutral relaxed state
-      if (curMouthWidth < this.neutralMouthWidth) {
-        this.neutralMouthWidth = curMouthWidth;
+      if (normalizedMouthWidth < this.neutralMouthWidth) {
+        this.neutralMouthWidth = normalizedMouthWidth;
       }
     }
-    const smileDetected = this.neutralMouthWidth ? curMouthWidth > this.neutralMouthWidth * 1.15 : false;
+    const smileDetected = this.neutralMouthWidth ? normalizedMouthWidth > this.neutralMouthWidth * 1.15 : false;
 
-    // Calculate Head Turn (Nose x-coordinate shifts > 20px in the 192x192 crop space)
-    // In the crop space, the center is 0.5. Scale X deviation to 192px.
+    // Calculate Head Turn (Nose x-coordinate shifts dynamically in the 192x192 crop space)
     const noseCropX = croppedLandmarks[noseTipIdx].x * 192;
-    const headTurnDetected = Math.abs(noseCropX - 96) > 20;
+    
+    if (this.initialNoseCropX === null) {
+      this.initialNoseCropX = noseCropX;
+    }
+    const headTurnDiff = Math.abs(noseCropX - this.initialNoseCropX);
+    if (headTurnDiff > 15) {
+      this.headTurnPassed = true;
+    }
+    const headTurnDetected = this.headTurnPassed;
     const headTurnLeftDetected = (noseCropX - 96) > 18;
     const headTurnRightDetected = (noseCropX - 96) < -18;
 

@@ -64,7 +64,7 @@ export interface AttendanceRecord {
   userId: string;
   userName: string;
   date: string; // YYYY-MM-DD
-  checkIn: string; // HH:MM AM/PM
+  checkIn?: string; // HH:MM AM/PM
   checkOut?: string; // HH:MM AM/PM
   note?: string; // Additional works context
 }
@@ -425,13 +425,22 @@ export const storageService = {
           "Biometric checkpoint entry"
         ];
         
+        let checkInVal: string | undefined = '09:30 AM';
+        let checkOutVal: string | undefined = '06:30 PM';
+        
+        if (count === 1) {
+          checkOutVal = undefined;
+        } else if (count === 2) {
+          checkInVal = undefined;
+        }
+
         mockRecords.push({
           id: `att_mock_${i}`,
           userId: targetUid,
           userName: targetName,
           date: dateStr,
-          checkIn: '09:30 AM',
-          checkOut: '06:30 PM',
+          checkIn: checkInVal,
+          checkOut: checkOutVal,
           note: notes[count % notes.length]
         });
         
@@ -444,6 +453,14 @@ export const storageService = {
     } else {
       try {
         records = JSON.parse(data);
+        // Force re-seed if the records are mock but lack the check-in-only or check-out-only styles
+        const isAllMock = records.length > 0 && records.every(r => r.id.startsWith('att_mock_'));
+        const hasCheckInOnly = records.some(r => r.checkIn && !r.checkOut);
+        const hasCheckOutOnly = records.some(r => !r.checkIn && r.checkOut);
+        if (isAllMock && (!hasCheckInOnly || !hasCheckOutOnly)) {
+          localStore.removeItem(ATTENDANCE_KEY);
+          return this.getAttendanceRecords(userId);
+        }
       } catch {
         records = [];
       }

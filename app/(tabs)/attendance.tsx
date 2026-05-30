@@ -457,7 +457,8 @@ export default function AttendanceScreen() {
     loadData();
   };
 
-  const getDurationStr = (checkIn: string, checkOut?: string) => {
+  const getDurationStr = (checkIn?: string, checkOut?: string) => {
+    if (!checkIn) return "--";
     if (!checkOut) return t('haventMarkedOut') || "haven't marked out";
     try {
       const parseTime = (tStr: string) => {
@@ -540,7 +541,7 @@ export default function AttendanceScreen() {
                 {todayRecord ? (
                   <>
                     <Text style={styles.todayTimeText}>
-                      {todayRecord.checkIn} {todayRecord.checkOut ? `→ ${todayRecord.checkOut}` : `→ ${t('haventMarkedOut')}`}
+                      {todayRecord.checkIn || '--:--'} {todayRecord.checkOut ? `→ ${todayRecord.checkOut}` : `→ ${t('haventMarkedOut')}`}
                     </Text>
                     <Text style={styles.todayNoteText}>
                       {todayRecord.note || "Biometric entry registered."}
@@ -653,7 +654,7 @@ export default function AttendanceScreen() {
                     <DateBadge dateString={log.date} />
                     <View style={styles.reportMiddle}>
                       <Text style={styles.reportTimeRange}>
-                        {log.checkIn} {log.checkOut ? `→ ${log.checkOut}` : `→ ${t('haventMarkedOut')}`}
+                        {log.checkIn || '--:--'} {log.checkOut ? `→ ${log.checkOut}` : `→ ${t('haventMarkedOut')}`}
                       </Text>
                       <View style={styles.durationRow}>
                         <MaterialCommunityIcons name="clock-outline" size={14} color={Colors.textTertiary} />

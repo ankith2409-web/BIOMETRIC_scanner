@@ -178,9 +178,10 @@ class FrameProcessorEngine {
     }
 
     const sig = meshResult.result.livenessSignal;
-    const livenessPass = sig.blinkDetected || sig.smileDetected || sig.headTurnDetected;
-    const landmarks = this.floatArrayToPoints(meshResult.result.landmarks);
     const ear = (sig.earLeft + sig.earRight) / 2;
+    const robustBlink = this.liveness.update(ear);
+    const livenessPass = robustBlink.blinkDetected || sig.smileDetected || sig.headTurnDetected;
+    const landmarks = this.floatArrayToPoints(meshResult.result.landmarks);
 
     const t3 = Date.now();
     const alignedNormalizedFloatArray = meshResult.result.alignedFaceTensor.dataSync();
