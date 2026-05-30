@@ -26,35 +26,46 @@ export const calcEAR = (points: LandmarkPoint[]): number => {
 };
 
 export class LivenessChecker {
-  private blinkHistory: number[] = [];
+  private maxEAR = 0.0;
   private closedFrames = 0;
-  private openAfterClosed = false;
+  private blinkHistory: number[] = [];
   private blinkConfirmed = false;
 
   update(ear: number): { blinkDetected: boolean; history: number[] } {
     this.blinkHistory.push(ear);
     if (this.blinkHistory.length > 10) this.blinkHistory.shift();
 
-    if (ear < BLINK_THRESHOLD) {
-      this.closedFrames += 1;
-    } else if (this.closedFrames >= 2 && this.closedFrames <= 10 && ear > BLINK_THRESHOLD) {
-      this.openAfterClosed = true;
-      this.blinkConfirmed = true;
-      this.closedFrames = 0;
-    } else {
-      this.closedFrames = 0;
+    // Dynamically track the maximum eye aspect ratio seen in this session (representing open eyes)
+    if (ear > this.maxEAR) {
+      this.maxEAR = ear;
+    }
+
+    // Only run detection if we have established a reasonable open-eye baseline (at least 0.15)
+    if (this.maxEAR > 0.15) {
+      const closedThreshold = this.maxEAR * 0.75; // 25% drop is considered eyes closed
+      const openThreshold = this.maxEAR * 0.88;   // return to at least 88% of open baseline
+
+      if (ear < closedThreshold) {
+        this.closedFrames += 1;
+      } else if (this.closedFrames >= 1 && this.closedFrames <= 12 && ear > openThreshold) {
+        // Dynamic transition detected: open -> closed -> open
+        this.blinkConfirmed = true;
+        this.closedFrames = 0;
+      } else if (ear > openThreshold) {
+        this.closedFrames = 0;
+      }
     }
 
     return {
-      blinkDetected: this.blinkConfirmed && this.openAfterClosed,
+      blinkDetected: this.blinkConfirmed,
       history: [...this.blinkHistory],
     };
   }
 
   reset(): void {
-    this.blinkHistory = [];
+    this.maxEAR = 0.0;
     this.closedFrames = 0;
-    this.openAfterClosed = false;
+    this.blinkHistory = [];
     this.blinkConfirmed = false;
   }
 }
