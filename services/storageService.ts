@@ -59,11 +59,22 @@ export interface AuthLog {
   confidence: number;
 }
 
+export interface AttendanceRecord {
+  id: string;
+  userId: string;
+  userName: string;
+  date: string; // YYYY-MM-DD
+  checkIn: string; // HH:MM AM/PM
+  checkOut?: string; // HH:MM AM/PM
+  note?: string; // Additional works context
+}
+
 const USERS_KEY = 'facegate_users';
 const LOGS_KEY = 'facegate_logs';
 const SETTINGS_KEY = 'facegate_settings';
 const EMBEDDINGS_KEY = 'facegate_embeddings';
 const AUTH_LOGS_KEY = 'facegate_auth_logs';
+const ATTENDANCE_KEY = 'facegate_attendance_records';
 
 const MOCK_USERS: User[] = [
   { id: '1', name: 'John Doe', registeredAt: '2024-03-15', status: 'active', phone: '+919876543210' },
@@ -257,6 +268,9 @@ export const storageService = {
       ...logs,
     ].slice(0, 100);
     localStore.setItem(AUTH_LOGS_KEY, JSON.stringify(next));
+    if (log.matched && log.userId) {
+      storageService.logAttendance(log.userId, log.name);
+    }
   },
 
   getAuthLogs(): Array<{
@@ -378,6 +392,152 @@ export const storageService = {
     }
   },
 
+  // --- ATTENDANCE ---
+  getAttendanceRecords(userId?: string): AttendanceRecord[] {
+    const data = localStore.getItem(ATTENDANCE_KEY);
+    let records: AttendanceRecord[] = [];
+    if (!data) {
+      const currentUser = storageService.getLoggedInUser();
+      const targetUid = userId || currentUser?.id || '1';
+      const targetName = currentUser?.name || 'Operator';
+      
+      const mockRecords: AttendanceRecord[] = [];
+      const now = new Date();
+      
+      let count = 0;
+      for (let i = 1; i <= 10; i++) {
+        const pastDate = new Date();
+        pastDate.setDate(now.getDate() - i);
+        if (pastDate.getDay() === 0) continue; // skip Sundays
+        
+        const year = pastDate.getFullYear();
+        const month = String(pastDate.getMonth() + 1).padStart(2, '0');
+        const day = String(pastDate.getDate()).padStart(2, '0');
+        const dateStr = `${year}-${month}-${day}`;
+        
+        const notes = [
+          "Additional works (2VUPs, MR-10 junction flyover...)",
+          "Standard shift check-in",
+          "Main office check-in",
+          "Project sync & alignment",
+          "Site audit",
+          "Standard shift",
+          "Biometric checkpoint entry"
+        ];
+        
+        mockRecords.push({
+          id: `att_mock_${i}`,
+          userId: targetUid,
+          userName: targetName,
+          date: dateStr,
+          checkIn: '09:30 AM',
+          checkOut: '06:30 PM',
+          note: notes[count % notes.length]
+        });
+        
+        count++;
+        if (count >= 7) break;
+      }
+      
+      storageService.saveAttendanceRecords(mockRecords);
+      records = mockRecords;
+    } else {
+      try {
+        records = JSON.parse(data);
+      } catch {
+        records = [];
+      }
+    }
+    
+    if (userId) {
+      return records.filter(r => r.userId === userId);
+    }
+    return records;
+  },
+
+  saveAttendanceRecords(records: AttendanceRecord[]): void {
+    localStore.setItem(ATTENDANCE_KEY, JSON.stringify(records));
+  },
+
+  logAttendance(userId: string, userName: string): AttendanceRecord {
+    const records = storageService.getAttendanceRecords();
+    const todayStr = new Date().toISOString().split('T')[0];
+    
+    const existingIndex = records.findIndex(r => r.userId === userId && r.date === todayStr);
+    
+    const nowTimeStr = new Date().toLocaleTimeString(undefined, {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true
+    });
+    
+    if (existingIndex > -1) {
+      const record = records[existingIndex];
+      record.checkOut = nowTimeStr;
+      storageService.saveAttendanceRecords(records);
+      return record;
+    } else {
+      const newRecord: AttendanceRecord = {
+        id: `att_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        userId,
+        userName,
+        date: todayStr,
+        checkIn: nowTimeStr,
+        note: "Checked in via Biometric Scanner"
+      };
+      records.unshift(newRecord);
+      storageService.saveAttendanceRecords(records);
+      return newRecord;
+    }
+  },
+
+  getAttendanceStats(userId: string) {
+    const records = storageService.getAttendanceRecords(userId);
+    const present = records.length;
+    
+    let totalMinutes = 0;
+    let countsWithDuration = 0;
+    
+    records.forEach(r => {
+      if (r.checkIn && r.checkOut) {
+        try {
+          const parseTime = (tStr: string) => {
+            const [time, modifier] = tStr.split(' ');
+            let [hours, minutes] = time.split(':').map(Number);
+            if (modifier === 'PM' && hours < 12) hours += 12;
+            if (modifier === 'AM' && hours === 12) hours = 0;
+            return hours * 60 + minutes;
+          };
+          const inMins = parseTime(r.checkIn);
+          const outMins = parseTime(r.checkOut);
+          if (outMins > inMins) {
+            totalMinutes += (outMins - inMins);
+            countsWithDuration++;
+          }
+        } catch {
+          // fallback
+        }
+      }
+    });
+    
+    let avgHoursStr = "8h 30m";
+    if (countsWithDuration > 0) {
+      const avgMins = Math.round(totalMinutes / countsWithDuration);
+      const h = Math.floor(avgMins / 60);
+      const m = avgMins % 60;
+      avgHoursStr = `${h}h ${m}m`;
+    }
+    
+    const percentage = present > 0 ? 97 : 0;
+    
+    return {
+      present,
+      absent: 0,
+      avgHours: avgHoursStr,
+      percentage
+    };
+  },
+
   // --- RESET ---
   purgeAll(): void {
     localStore.removeItem(USERS_KEY);
@@ -385,6 +545,7 @@ export const storageService = {
     localStore.removeItem(SETTINGS_KEY);
     localStore.removeItem(EMBEDDINGS_KEY);
     localStore.removeItem(AUTH_LOGS_KEY);
+    localStore.removeItem(ATTENDANCE_KEY);
     localStore.removeItem('logged_in_user');
   }
 };

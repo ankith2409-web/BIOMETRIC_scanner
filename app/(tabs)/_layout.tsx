@@ -127,11 +127,11 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="users"
+        name="attendance"
         options={{
-          title: t('users'),
+          title: t('attendance'),
           tabBarIcon: ({ color, focused }) => (
-            <TabIcon name="account-group" color={color} focused={focused} />
+            <TabIcon name="calendar-check" color={color} focused={focused} />
           ),
         }}
       />
