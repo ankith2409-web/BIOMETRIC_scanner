@@ -31,7 +31,7 @@ Contains the screens and routing layout.
 *   [`app/_layout.tsx`](file:///c:/Users/akith/OneDrive/Desktop/nhai/app/_layout.tsx): Root navigation wrapper. Configures paper provider, navigation themes, and loads custom fonts.
 *   [`app/index.tsx`](file:///c:/Users/akith/OneDrive/Desktop/nhai/app/index.tsx): Initial redirect logic. Routes to `/(tabs)` if already logged in, otherwise redirects to `/login`.
 *   [`app/splash.tsx`](file:///c:/Users/akith/OneDrive/Desktop/nhai/app/splash.tsx): Premium animated entry portal that pre-loads TensorFlow models with progress tracking.
-*   [`app/login.tsx`](file:///c:/Users/akith/OneDrive/Desktop/nhai/app/login.tsx): User authentication portal. Uses the camera and real-time matcher.
+*   [`app/login.tsx`](file:///c:/Users/akith/OneDrive/Desktop/nhai/app/login.tsx): User authentication portal. Uses the camera and real-time matcher. Features an Admin Bypass button in the top-right corner to allow instant entry to the tabs console.
 *   [`app/register.tsx`](file:///c:/Users/akith/OneDrive/Desktop/nhai/app/register.tsx): Admin registration page where users can input registration details and capture face profile bursts.
 *   [`app/register-portal.tsx`](file:///c:/Users/akith/OneDrive/Desktop/nhai/app/register-portal.tsx): Web-alternative/admin panel interface for self-registration.
 *   [`app/authenticate.tsx`](file:///c:/Users/akith/OneDrive/Desktop/nhai/app/authenticate.tsx): Dedicated general verification screen.

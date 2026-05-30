@@ -289,6 +289,18 @@ const LANGUAGES: LanguageOption[] = [
 export default function LoginScreen() {
   const router = useRouter();
 
+  const handleAdminBypass = () => {
+    const adminUser = {
+      id: 'admin',
+      name: 'Administrator',
+      phone: '+919999999999',
+      registeredAt: new Date().toISOString().split('T')[0],
+      status: 'active' as const,
+    };
+    storageService.setLoggedInUser(adminUser);
+    router.replace('/(tabs)');
+  };
+
   // Screen modes & inputs
   const [mode, setMode] = useState<ScreenMode>('language-select');
   const [selectedLanguage, setSelectedLanguage] = useState<string>(getLocale());
@@ -575,6 +587,17 @@ export default function LoginScreen() {
         <FloatingParticle delay={300} x={300} y={700} size={5} />
         <FloatingParticle delay={2200} x={180} y={200} size={3} />
       </View>
+
+      {/* Admin Bypass Button in Top-Right Corner */}
+      {(mode === 'phone-input' || mode === 'language-select') && (
+        <Pressable
+          style={styles.adminButton}
+          onPress={handleAdminBypass}
+        >
+          <MaterialCommunityIcons name="security" size={14} color="#FFD400" />
+          <Text style={styles.adminButtonText}>Admin</Text>
+        </Pressable>
+      )}
 
       {/* 0. LANGUAGE SELECTION MODE */}
       {mode === 'language-select' && (
@@ -1107,5 +1130,25 @@ const styles = StyleSheet.create({
     ...Typography.bodySemiBold,
     fontSize: 10,
     color: Colors.accent,
+  },
+  adminButton: {
+    position: 'absolute',
+    top: 52,
+    right: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255, 212, 0, 0.08)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 212, 0, 0.25)',
+    zIndex: 100,
+  },
+  adminButtonText: {
+    ...Typography.bodySemiBold,
+    fontSize: FontSizes.xs,
+    color: '#FFD400',
   },
 });
