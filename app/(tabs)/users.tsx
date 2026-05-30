@@ -27,7 +27,7 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { t, getLocale, addLocaleListener } from '../../services/i18n';
 
 function UserCard({ user, index, onDelete }: { user: User; index: number; onDelete: () => void }) {
-  const initials = user.name.split(' ').map(n => n[0]).join('');
+  const initials = user.name ? user.name.split(' ').filter(Boolean).map(n => n[0]).join('') : 'U';
   const scale = useSharedValue(1);
 
   const animatedStyle = useAnimatedStyle(() => ({

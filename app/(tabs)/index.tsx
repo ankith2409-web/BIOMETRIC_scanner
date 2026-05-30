@@ -103,7 +103,11 @@ function ActionCard({
 }
 
 function ActivityItem({ item, index }: { item: AuthLog; index: number }) {
-  const initials = item.name === 'Unknown' || item.name === 'Unknown User' ? '?' : item.name.split(' ').map(n => n[0]).join('');
+  const initials = item.name 
+    ? (item.name === 'Unknown' || item.name === 'Unknown User' 
+        ? '?' 
+        : item.name.split(' ').filter(Boolean).map(n => n[0]).join('')) 
+    : '?';
   const isSuccess = item.status === 'success';
   const accentColor = isSuccess ? Colors.success : Colors.danger;
 
@@ -187,6 +191,8 @@ export default function HomeScreen() {
     if (hour < 17) return t('greetingAfternoon');
     return t('greetingEvening');
   };
+
+  if (loading) return <HomeSkeleton />;
 
   // Compute stats
   const totalUsers = users.length;

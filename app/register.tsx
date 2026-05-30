@@ -337,11 +337,14 @@ export default function RegisterScreen() {
         return;
       }
 
-      if (savedUserId.current && currentStep >= 4) {
+      if (savedUserId.current) {
         if (extraCaptureCount.current < 3) {
           storageService.saveExtraFaceEmbedding(savedUserId.current, process.embedding);
           extraCaptureCount.current += 1;
           console.log('[FaceGate][Register] Extra embedding', extraCaptureCount.current, 'saved');
+        }
+        if (extraCaptureCount.current >= 3) {
+          setCurrentStep(4);
         }
         return;
       }
@@ -424,7 +427,7 @@ export default function RegisterScreen() {
       savedUserId.current = userId;
       extraCaptureCount.current = 0;
       validationFailCount.current = 0;
-      setCurrentStep(4);
+      setQualityPrompt('Saving multi-angle templates...');
     } catch (e: any) {
       console.warn('Register processing loop error:', e);
       setDebugText(`Processing loop error: ${e.message}`);
