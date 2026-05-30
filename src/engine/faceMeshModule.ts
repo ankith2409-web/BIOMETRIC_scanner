@@ -263,13 +263,18 @@ export class FaceMeshModule {
     if (this.initialNoseCropX === null) {
       this.initialNoseCropX = noseCropX;
     }
-    const headTurnDiff = Math.abs(noseCropX - this.initialNoseCropX);
+    const noseShift = this.initialNoseCropX !== null ? noseCropX - this.initialNoseCropX : 0;
+    const headTurnDiff = Math.abs(noseShift);
     if (headTurnDiff > 15) {
       this.headTurnPassed = true;
     }
     const headTurnDetected = this.headTurnPassed;
-    const headTurnLeftDetected = (noseCropX - 96) > 18;
-    const headTurnRightDetected = (noseCropX - 96) < -18;
+    const physicalLeft = (noseCropX - 96) < -12;
+    const physicalRight = (noseCropX - 96) > 12;
+    const dynamicLeft = this.initialNoseCropX !== null && noseShift < -15;
+    const dynamicRight = this.initialNoseCropX !== null && noseShift > 15;
+    const headTurnLeftDetected = physicalLeft || dynamicLeft;
+    const headTurnRightDetected = physicalRight || dynamicRight;
 
     // 6. Apply Affine Warp to straighten and center the face, cropping to 112x112
     const alignedFaceBuffer = this.affineWarpAndCrop(

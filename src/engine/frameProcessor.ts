@@ -177,10 +177,14 @@ class FrameProcessorEngine {
       finalQualityMessage = getLightingMessage(lighting.issue);
     }
 
-    const sig = meshResult.result.livenessSignal;
+    const sig = {
+      ...meshResult.result.livenessSignal,
+      blinkDetected: this.liveness.update(
+        (meshResult.result.livenessSignal.earLeft + meshResult.result.livenessSignal.earRight) / 2
+      ).blinkDetected,
+    };
     const ear = (sig.earLeft + sig.earRight) / 2;
-    const robustBlink = this.liveness.update(ear);
-    const livenessPass = robustBlink.blinkDetected || sig.smileDetected || sig.headTurnDetected;
+    const livenessPass = sig.blinkDetected || sig.smileDetected || sig.headTurnDetected;
     const landmarks = this.floatArrayToPoints(meshResult.result.landmarks);
 
     const t3 = Date.now();

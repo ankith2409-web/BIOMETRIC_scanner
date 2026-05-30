@@ -39,6 +39,60 @@ import { t } from '../services/i18n';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 type AuthState = 'loading' | 'scanning' | 'liveness' | 'processing' | 'success' | 'failure';
+type LivenessChallenge = 'blink' | 'smile' | 'turn_left' | 'turn_right';
+
+const CHALLENGES: LivenessChallenge[] = ['blink', 'smile', 'turn_left', 'turn_right'];
+
+const pickRandomChallenge = (): LivenessChallenge =>
+  CHALLENGES[Math.floor(Math.random() * CHALLENGES.length)];
+
+const challengePromptKey = (challenge: LivenessChallenge): string => {
+  switch (challenge) {
+    case 'blink':
+      return 'authPromptBlink';
+    case 'smile':
+      return 'authPromptSmile';
+    case 'turn_left':
+      return 'authPromptTurnLeft';
+    case 'turn_right':
+      return 'authPromptTurnRight';
+  }
+};
+
+const challengeIcon = (challenge: LivenessChallenge): string => {
+  switch (challenge) {
+    case 'blink':
+      return 'eye-outline';
+    case 'smile':
+      return 'emoticon-happy-outline';
+    case 'turn_left':
+      return 'arrow-left-bold';
+    case 'turn_right':
+      return 'arrow-right-bold';
+  }
+};
+
+const isChallengePassed = (
+  challenge: LivenessChallenge,
+  sig?: {
+    blinkDetected: boolean;
+    smileDetected: boolean;
+    headTurnLeftDetected: boolean;
+    headTurnRightDetected: boolean;
+  }
+): boolean => {
+  if (!sig) return false;
+  switch (challenge) {
+    case 'blink':
+      return sig.blinkDetected;
+    case 'smile':
+      return sig.smileDetected;
+    case 'turn_left':
+      return sig.headTurnLeftDetected;
+    case 'turn_right':
+      return sig.headTurnRightDetected;
+  }
+};
 
 function ResultOverlay({
   state,
@@ -145,6 +199,7 @@ export default function AuthenticateScreen() {
   const [debugText, setDebugText] = useState<string>('Console initialized. Awaiting face...');
   const [lightingScore, setLightingScore] = useState(100);
   const [lightingIssue, setLightingIssue] = useState<string | null>(null);
+  const [currentChallenge, setCurrentChallenge] = useState<LivenessChallenge>(() => pickRandomChallenge());
 
   const scanPulse = useSharedValue(1);
 
@@ -153,6 +208,7 @@ export default function AuthenticateScreen() {
   const stableCount = useRef(0);
   const timeoutId = useRef<ReturnType<typeof setTimeout> | null>(null);
   const matchAttempts = useRef(0);
+  const challengePassedRef = useRef(false);
 
   // Load models on mount
   useEffect(() => {
@@ -160,8 +216,10 @@ export default function AuthenticateScreen() {
     modelLoader
       .loadAll()
       .then(() => {
+        const challenge = pickRandomChallenge();
+        setCurrentChallenge(challenge);
         setAuthState('scanning');
-        setDebugText('Mock models initialized. Scanning started.');
+        setDebugText(`Challenge: ${challenge} — awaiting face...`);
       })
       .catch(err => {
         console.error('Auth model loading failed:', err);
@@ -264,26 +322,30 @@ export default function AuthenticateScreen() {
         return;
       }
 
-      // If authState is already 'processing', they have already passed liveness for this session.
-      const hasPassedLiveness = process.livenessPass || authState === 'processing';
+      // Challenge-response liveness: only the requested action satisfies verification.
+      const challengeMet = isChallengePassed(currentChallenge, process.livenessSignal);
+      const hasPassedChallenge = challengeMet || challengePassedRef.current;
 
       if (process.qualityPass === false) {
         setQualityPrompt(process.qualityMessage ?? 'Adjust your position and lighting.');
         return;
-      } else if (!hasPassedLiveness) {
-        setQualityPrompt('Blink, smile, or turn head to verify presence');
+      }
+
+      if (!hasPassedChallenge) {
+        setQualityPrompt(t(challengePromptKey(currentChallenge)));
         if (authState === 'scanning') setAuthState('liveness');
         return;
-      } else {
-        setQualityPrompt('');
       }
+
+      challengePassedRef.current = true;
+      setQualityPrompt('');
 
       if (authState === 'scanning' || authState === 'liveness') {
         setAuthState('processing');
       }
 
-      // Attempt matching only after liveness is passed
-      if (authState === 'processing' && process.faceFound && process.embedding) {
+      // Attempt matching only after the active challenge is satisfied
+      if (process.faceFound && process.embedding) {
         const confidencePct = Math.round((auth.confidence ?? 0) * 100);
         if (auth.matched && confidencePct >= 95) {
           setMatchedName(auth.name ?? 'Known User');
@@ -364,9 +426,10 @@ export default function AuthenticateScreen() {
     } finally {
       isProcessing.current = false;
     }
-  }, [authState]);
+  }, [authState, currentChallenge]);
 
   const handleRetry = () => {
+    const challenge = pickRandomChallenge();
     setShowResult(null);
     setMatchedName('');
     setMatchedConfidence(0);
@@ -377,8 +440,11 @@ export default function AuthenticateScreen() {
     setQualityPrompt('Detecting face...');
     stableCount.current = 0;
     matchAttempts.current = 0;
+    challengePassedRef.current = false;
+    setCurrentChallenge(challenge);
     frameProcessorEngine.resetLiveness();
     setAuthState('scanning');
+    setDebugText(`Challenge: ${challenge} — awaiting face...`);
   };
 
   const pulseStyle = useAnimatedStyle(() => ({
@@ -386,6 +452,17 @@ export default function AuthenticateScreen() {
   }));
 
   const isCamera = !showResult && authState !== 'loading';
+  const isPromptPhase = authState === 'scanning' || authState === 'liveness';
+  const livenessUiPrompt = lightingIssue
+    ? qualityPrompt
+    : authState === 'liveness'
+    ? t(challengePromptKey(currentChallenge))
+    : qualityPrompt;
+  const livenessUiIcon: keyof typeof MaterialCommunityIcons.glyphMap = lightingIssue
+    ? 'weather-sunny-alert'
+    : authState === 'liveness'
+    ? (challengeIcon(currentChallenge) as keyof typeof MaterialCommunityIcons.glyphMap)
+    : 'face-recognition';
 
   return (
     <View style={styles.container}>
@@ -481,11 +558,8 @@ export default function AuthenticateScreen() {
       )}
 
       {/* Liveness prompt */}
-      {isCamera && (authState === 'liveness' || qualityPrompt) && (
-        <LivenessPrompt
-          prompt={qualityPrompt || 'Blink, smile, or turn head to verify presence'}
-          icon={qualityPrompt ? 'weather-sunny-alert' : 'face-recognition'}
-        />
+      {isCamera && isPromptPhase && Boolean(livenessUiPrompt) && (
+        <LivenessPrompt prompt={livenessUiPrompt} icon={livenessUiIcon} />
       )}
 
       {/* Processing indicator */}

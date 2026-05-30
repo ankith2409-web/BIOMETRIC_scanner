@@ -1139,6 +1139,10 @@ const CUSTOM_TRANSLATIONS: Record<string, Record<string, string>> = {
     legendCheckedIn: 'Check-in only',
     legendCheckedOut: 'Check-out only',
     legendCompleted: 'Completed Shift',
+    authPromptBlink: 'Blink your eyes to verify presence',
+    authPromptSmile: 'Smile to verify presence',
+    authPromptTurnLeft: 'Turn your head slowly to the Left',
+    authPromptTurnRight: 'Turn your head slowly to the Right',
   },
   hi: {
     regTitle: 'बायोमेट्रिक्स पंजीकरण',
@@ -1185,6 +1189,10 @@ const CUSTOM_TRANSLATIONS: Record<string, Record<string, string>> = {
     legendCheckedIn: 'केवल इन मार्क',
     legendCheckedOut: 'केवल आउट मार्क',
     legendCompleted: 'पूर्ण शिफ्ट',
+    authPromptBlink: 'उपस्थिति सत्यापित करने के लिए अपनी आँखें झपकाएं',
+    authPromptSmile: 'उपस्थिति सत्यापित करने के लिए मुस्कुराएं',
+    authPromptTurnLeft: 'उपस्थिति सत्यापित करने के लिए अपना सिर धीरे-धीरे बाईं ओर घुमाएं',
+    authPromptTurnRight: 'उपस्थिति सत्यापित करने के लिए अपना सिर धीरे-धीरे दाईं ओर घुमाएं',
   },
   mr: {
     regTitle: 'बायोमेट्रिक्सची नोंदणी',

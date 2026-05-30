@@ -257,10 +257,13 @@ class FrameProcessorEngineWeb {
       // Call FaceMeshModule for liveness signals
       const meshResult = faceMeshModule.process(landmarks, normDetection, filteredRGB, size, size);
 
-      const sig = meshResult.result.livenessSignal;
-      const ear = (sig.earLeft + sig.earRight) / 2;
+      const ear = (meshResult.result.livenessSignal.earLeft + meshResult.result.livenessSignal.earRight) / 2;
       const robustBlink = this.liveness.update(ear);
-      const livenessPass = robustBlink.blinkDetected || sig.smileDetected || sig.headTurnDetected;
+      const sig = {
+        ...meshResult.result.livenessSignal,
+        blinkDetected: robustBlink.blinkDetected,
+      };
+      const livenessPass = sig.blinkDetected || sig.smileDetected || sig.headTurnDetected;
 
       timing.total = Date.now() - t0;
 
