@@ -323,13 +323,25 @@ export default function LoginScreen() {
   const [debugText, setDebugText] = useState<string>('Ready for mobile input.');
   const [lightingScore, setLightingScore] = useState(100);
   const [lightingIssue, setLightingIssue] = useState<string | null>(null);
+  const [telemetry, setTelemetry] = useState<{
+    recogConfidence: number;
+    livenessConfidence: number;
+    qualityConfidence: number;
+    temporalConfidence: number;
+    gapConfidence: number;
+    finalConfidence: number;
+    bestDist: number;
+    runnerUpDist: number;
+    gap: number;
+    isSpoof: boolean;
+    historySize: number;
+  } | null>(null);
 
   // References
   const isProcessing = useRef(false);
   const authAttempts = useRef(0);
   const maxAuthAttempts = 15;
   const livenessPassedRef = useRef(false);
-  const recentEmbeddings = useRef<Float32Array[]>([]);
 
   // Load AI Models on mount
   useEffect(() => {
@@ -384,12 +396,21 @@ export default function LoginScreen() {
     isProcessing.current = true;
 
     try {
-      // 1. Get embedding from frame
-      const process = await frameProcessorEngine.processForEmbedding(frame, (msg) => {
-        setDebugText(msg);
-      }, 'auth');
+      const userGallery = storageService
+        .getFaceEmbeddingsAsGallery()
+        .filter(e => e.userId === matchedUser.id);
 
-      if (!process.faceFound || !process.embedding) {
+      if (!userGallery.length) {
+        setDebugText('Biometric templates missing from database. Re-register.');
+        setMode('not-found');
+        return;
+      }
+
+      const { auth, process } = await frameProcessorEngine.processForAuth(frame, userGallery, (msg) => {
+        setDebugText(msg);
+      });
+
+      if (!process.faceFound) {
         setFaceDetected(false);
         setShowLandmarks(false);
         setRealPoints(undefined);
@@ -434,58 +455,28 @@ export default function LoginScreen() {
         return;
       }
 
-      // Check liveness (e.g. blinking, smiling, head turning)
-      const hasPassedLiveness = process.livenessPass || livenessPassedRef.current;
-      if (!hasPassedLiveness) {
-        setQualityPrompt('Blink, smile, or turn head to verify presence');
-        return;
-      } else {
-        livenessPassedRef.current = true;
-        setQualityPrompt('Liveness verified. Scanning identity...');
+      setQualityPrompt('Verifying presence...');
+
+      // Telemetry update
+      if (auth) {
+        setTelemetry({
+          recogConfidence: auth.recogConfidence ?? 0,
+          livenessConfidence: auth.livenessConfidence ?? 0,
+          qualityConfidence: auth.qualityConfidence ?? 0,
+          temporalConfidence: auth.temporalConfidence ?? 0,
+          gapConfidence: auth.gapConfidence ?? 0,
+          finalConfidence: auth.confidence ?? 0,
+          bestDist: auth.bestDist ?? 0,
+          runnerUpDist: auth.runnerUpDist ?? 0,
+          gap: auth.gap ?? 0,
+          isSpoof: !!auth.isSpoof,
+          historySize: auth.historySize ?? 0,
+        });
       }
 
-      // 2. Load and match against this user's full multi-angle gallery (center + extraVectors)
-      const userGallery = storageService
-        .getFaceEmbeddingsAsGallery()
-        .filter(e => e.userId === matchedUser.id);
-      if (!userGallery.length) {
-        setDebugText('Biometric templates missing from database. Re-register.');
-        setMode('not-found');
-        return;
-      }
-
-      // 3. Accumulate recent embeddings for smoothing
-      recentEmbeddings.current.push(process.embedding);
-      if (recentEmbeddings.current.length > 3) {
-        recentEmbeddings.current.shift();
-      }
-
-      // Compute centroid of recent embeddings
-      const computeCentroid = (embeddings: Float32Array[]) => {
-        if (embeddings.length === 1) return embeddings[0];
-        const dim = embeddings[0].length;
-        const centroid = new Float32Array(dim);
-        for (const emb of embeddings) {
-          for (let i = 0; i < dim; i++) centroid[i] += emb[i];
-        }
-        const n = embeddings.length;
-        for (let i = 0; i < dim; i++) centroid[i] /= n;
-        
-        let norm = 0;
-        for (let i = 0; i < dim; i++) norm += centroid[i] * centroid[i];
-        norm = Math.sqrt(norm) + 1e-8;
-        const out = new Float32Array(dim);
-        for (let i = 0; i < dim; i++) out[i] = centroid[i] / norm;
-        return out;
-      };
-
-      const smoothedEmbedding = computeCentroid(recentEmbeddings.current);
-      const threshold = storageService.getSettings().threshold;
-      const match = matchEmbedding(smoothedEmbedding, userGallery, threshold);
-
-      if (match.matched) {
+      if (auth.matched) {
         // Log in successful!
-        const confidencePct = Math.round((match.confidence ?? 0.85) * 100);
+        const confidencePct = Math.round((auth.confidence ?? 0.95) * 100);
         setDebugText(`Biometric match verified! Confidence: ${confidencePct}%`);
 
         storageService.addLog({
@@ -499,7 +490,7 @@ export default function LoginScreen() {
           userId: matchedUser.id,
           name: matchedUser.name,
           matched: true,
-          confidence: match.confidence,
+          confidence: auth.confidence,
           livenessPass: true,
           timestamp: new Date().toISOString(),
         });
@@ -532,7 +523,7 @@ export default function LoginScreen() {
             name: matchedUser.name,
             timestamp: 'Just now',
             status: 'failure',
-            confidence: Math.round((match.confidence ?? 0.35) * 100),
+            confidence: Math.round((auth.confidence ?? 0.35) * 100),
           });
           setDebugText('Biometric validation limit exceeded. Access denied.');
           setMode('phone-input');
@@ -722,16 +713,54 @@ export default function LoginScreen() {
           </View>
 
           {/* Liveness prompt */}
-          {(qualityPrompt || !livenessPassedRef.current) && (
+          {qualityPrompt && (
             <LivenessPrompt
-              prompt={qualityPrompt || 'Blink, smile, or turn head to verify presence'}
-              icon={qualityPrompt ? 'weather-sunny-alert' : 'face-recognition'}
+              prompt={qualityPrompt}
+              icon="face-recognition"
             />
           )}
 
-          {/* Lighting Indicator */}
-          <View style={{ width: 280, marginTop: 12, marginBottom: 12 }}>
+          {/* Lighting Indicator & Telemetry */}
+          <View style={{ width: 280, marginTop: 12, marginBottom: 12, gap: 8 }}>
             <LightingIndicator score={lightingScore} issue={lightingIssue} />
+            {telemetry && (
+              <View style={styles.telemetryCard}>
+                <Text style={styles.telemetryTitle}>🛡️ Live Security Telemetry (Admin)</Text>
+                <View style={styles.telemetryGrid}>
+                  <View style={styles.telemetryRow}>
+                    <Text style={styles.telemetryLabel}>Recognition</Text>
+                    <Text style={styles.telemetryValue}>{(telemetry.recogConfidence * 100).toFixed(1)}%</Text>
+                  </View>
+                  <View style={styles.telemetryRow}>
+                    <Text style={styles.telemetryLabel}>Liveness</Text>
+                    <Text style={[styles.telemetryValue, telemetry.isSpoof ? {color: Colors.danger} : {color: Colors.success}]}>
+                      {(telemetry.livenessConfidence * 100).toFixed(1)}% {telemetry.isSpoof ? '(SPOOF)' : '(PASS)'}
+                    </Text>
+                  </View>
+                  <View style={styles.telemetryRow}>
+                    <Text style={styles.telemetryLabel}>Image Quality</Text>
+                    <Text style={styles.telemetryValue}>{(telemetry.qualityConfidence * 100).toFixed(1)}%</Text>
+                  </View>
+                  <View style={styles.telemetryRow}>
+                    <Text style={styles.telemetryLabel}>Temporal</Text>
+                    <Text style={styles.telemetryValue}>
+                      {(telemetry.temporalConfidence * 100).toFixed(1)}% ({telemetry.historySize}/3)
+                    </Text>
+                  </View>
+                  <View style={styles.telemetryRow}>
+                    <Text style={styles.telemetryLabel}>Confidence Gap</Text>
+                    <Text style={styles.telemetryValue}>{(telemetry.gapConfidence * 100).toFixed(1)}%</Text>
+                  </View>
+                </View>
+                <View style={styles.divider} />
+                <View style={styles.telemetryRowTotal}>
+                  <Text style={styles.telemetryLabelTotal}>Aggregated Confidence</Text>
+                  <Text style={[styles.telemetryValueTotal, telemetry.finalConfidence >= 0.95 ? {color: Colors.success} : {color: Colors.accent}]}>
+                    {(telemetry.finalConfidence * 100).toFixed(1)}%
+                  </Text>
+                </View>
+              </View>
+            )}
           </View>
 
           <Pressable
@@ -740,7 +769,7 @@ export default function LoginScreen() {
               setMode('phone-input');
               setMatchedUser(null);
               livenessPassedRef.current = false;
-              recentEmbeddings.current = [];
+              setTelemetry(null);
               frameProcessorEngine.resetLiveness();
             }}
           >
@@ -1150,5 +1179,59 @@ const styles = StyleSheet.create({
     ...Typography.bodySemiBold,
     fontSize: FontSizes.xs,
     color: '#FFD400',
+  },
+  telemetryCard: {
+    backgroundColor: 'rgba(10, 20, 40, 0.85)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 212, 255, 0.25)',
+    borderRadius: BorderRadius.lg,
+    padding: 10,
+    width: 280,
+    ...Shadows.glow('rgba(0, 212, 255, 0.05)'),
+  },
+  telemetryTitle: {
+    ...Typography.bodySemiBold,
+    fontSize: 9,
+    color: Colors.textSecondary,
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  telemetryGrid: {
+    gap: 3,
+  },
+  telemetryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  telemetryLabel: {
+    ...Typography.body,
+    fontSize: 9,
+    color: Colors.textTertiary,
+  },
+  telemetryValue: {
+    ...Typography.bodyMedium,
+    fontSize: 9,
+    color: Colors.textPrimary,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    marginVertical: 6,
+  },
+  telemetryRowTotal: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  telemetryLabelTotal: {
+    ...Typography.bodySemiBold,
+    fontSize: FontSizes.xs,
+    color: Colors.textSecondary,
+  },
+  telemetryValueTotal: {
+    ...Typography.heading,
+    fontSize: FontSizes.sm,
   },
 });

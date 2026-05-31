@@ -200,6 +200,19 @@ export default function AuthenticateScreen() {
   const [lightingScore, setLightingScore] = useState(100);
   const [lightingIssue, setLightingIssue] = useState<string | null>(null);
   const [currentChallenge, setCurrentChallenge] = useState<LivenessChallenge>(() => pickRandomChallenge());
+  const [telemetry, setTelemetry] = useState<{
+    recogConfidence: number;
+    livenessConfidence: number;
+    qualityConfidence: number;
+    temporalConfidence: number;
+    gapConfidence: number;
+    finalConfidence: number;
+    bestDist: number;
+    runnerUpDist: number;
+    gap: number;
+    isSpoof: boolean;
+    historySize: number;
+  } | null>(null);
 
   const scanPulse = useSharedValue(1);
 
@@ -274,8 +287,6 @@ export default function AuthenticateScreen() {
     isProcessing.current = true;
 
     try {
-      // The gallery is now loaded internally by the engine from storageService
-      // so we no longer need to pass it here.
       const { auth, process } = await frameProcessorEngine.processForAuth(frame, undefined, (msg) => {
         setDebugText(msg);
       });
@@ -322,32 +333,37 @@ export default function AuthenticateScreen() {
         return;
       }
 
-      // Challenge-response liveness: only the requested action satisfies verification.
-      const challengeMet = isChallengePassed(currentChallenge, process.livenessSignal);
-      const hasPassedChallenge = challengeMet || challengePassedRef.current;
-
       if (process.qualityPass === false) {
         setQualityPrompt(process.qualityMessage ?? 'Adjust your position and lighting.');
         return;
       }
 
-      if (!hasPassedChallenge) {
-        setQualityPrompt(t(challengePromptKey(currentChallenge)));
-        if (authState === 'scanning') setAuthState('liveness');
-        return;
-      }
-
-      challengePassedRef.current = true;
-      setQualityPrompt('');
-
+      setQualityPrompt('Verifying presence...');
       if (authState === 'scanning' || authState === 'liveness') {
         setAuthState('processing');
       }
 
-      // Attempt matching only after the active challenge is satisfied
+      // Telemetry update
+      if (auth) {
+        setTelemetry({
+          recogConfidence: auth.recogConfidence ?? 0,
+          livenessConfidence: auth.livenessConfidence ?? 0,
+          qualityConfidence: auth.qualityConfidence ?? 0,
+          temporalConfidence: auth.temporalConfidence ?? 0,
+          gapConfidence: auth.gapConfidence ?? 0,
+          finalConfidence: auth.confidence ?? 0,
+          bestDist: auth.bestDist ?? 0,
+          runnerUpDist: auth.runnerUpDist ?? 0,
+          gap: auth.gap ?? 0,
+          isSpoof: !!auth.isSpoof,
+          historySize: auth.historySize ?? 0,
+        });
+      }
+
+      // Attempt matching using high-security validation
       if (process.faceFound && process.embedding) {
         const confidencePct = Math.round((auth.confidence ?? 0) * 100);
-        if (auth.matched && confidencePct >= 95) {
+        if (auth.matched) {
           setMatchedName(auth.name ?? 'Known User');
           setMatchedConfidence(confidencePct);
           
@@ -393,26 +409,26 @@ export default function AuthenticateScreen() {
           matchAttempts.current = 0;
         } else {
           matchAttempts.current += 1;
-          // Give 8 frames of attempts across different head angles before failing
-          if (matchAttempts.current >= 8) {
+          // Give 12 frames of attempts to check before failing
+          if (matchAttempts.current >= 12) {
             storageService.addLog({
               name: 'Unknown User',
               timestamp: 'Just now',
               status: 'failure',
-              confidence: Math.round((auth.confidence ?? 0.3) * 100),
+              confidence: confidencePct,
             });
             storageService.addAuthLog({
               name: 'Unknown User',
               matched: false,
               confidence: auth.confidence,
-              livenessPass: true,
+              livenessPass: process.livenessPass ?? false,
               timestamp: new Date().toISOString(),
             });
             sqliteService.addAuthLog({
               name: 'Unknown User',
               matched: false,
               confidence: auth.confidence,
-              livenessPass: true,
+              livenessPass: process.livenessPass ?? false,
               timestamp: new Date().toISOString(),
             });
             setAuthState('failure');
@@ -426,7 +442,7 @@ export default function AuthenticateScreen() {
     } finally {
       isProcessing.current = false;
     }
-  }, [authState, currentChallenge]);
+  }, [authState]);
 
   const handleRetry = () => {
     const challenge = pickRandomChallenge();
@@ -442,9 +458,10 @@ export default function AuthenticateScreen() {
     matchAttempts.current = 0;
     challengePassedRef.current = false;
     setCurrentChallenge(challenge);
+    setTelemetry(null);
     frameProcessorEngine.resetLiveness();
     setAuthState('scanning');
-    setDebugText(`Challenge: ${challenge} — awaiting face...`);
+    setDebugText(`Awaiting face...`);
   };
 
   const pulseStyle = useAnimatedStyle(() => ({
@@ -575,8 +592,46 @@ export default function AuthenticateScreen() {
       )}
 
       {isCamera && (
-        <View style={{ position: 'absolute', bottom: 24, left: 20, right: 20 }}>
+        <View style={styles.telemetryOverlayContainer}>
           <LightingIndicator score={lightingScore} issue={lightingIssue} />
+          {telemetry && (
+            <View style={styles.telemetryCard}>
+              <Text style={styles.telemetryTitle}>🛡️ Live Security Telemetry (Admin)</Text>
+              <View style={styles.telemetryGrid}>
+                <View style={styles.telemetryRow}>
+                  <Text style={styles.telemetryLabel}>Recognition</Text>
+                  <Text style={styles.telemetryValue}>{(telemetry.recogConfidence * 100).toFixed(1)}%</Text>
+                </View>
+                <View style={styles.telemetryRow}>
+                  <Text style={styles.telemetryLabel}>Liveness</Text>
+                  <Text style={[styles.telemetryValue, telemetry.isSpoof ? {color: Colors.danger} : {color: Colors.success}]}>
+                    {(telemetry.livenessConfidence * 100).toFixed(1)}% {telemetry.isSpoof ? '(SPOOF)' : '(PASS)'}
+                  </Text>
+                </View>
+                <View style={styles.telemetryRow}>
+                  <Text style={styles.telemetryLabel}>Image Quality</Text>
+                  <Text style={styles.telemetryValue}>{(telemetry.qualityConfidence * 100).toFixed(1)}%</Text>
+                </View>
+                <View style={styles.telemetryRow}>
+                  <Text style={styles.telemetryLabel}>Temporal</Text>
+                  <Text style={styles.telemetryValue}>
+                    {(telemetry.temporalConfidence * 100).toFixed(1)}% ({telemetry.historySize}/3)
+                  </Text>
+                </View>
+                <View style={styles.telemetryRow}>
+                  <Text style={styles.telemetryLabel}>Confidence Gap</Text>
+                  <Text style={styles.telemetryValue}>{(telemetry.gapConfidence * 100).toFixed(1)}%</Text>
+                </View>
+              </View>
+              <View style={styles.divider} />
+              <View style={styles.telemetryRowTotal}>
+                <Text style={styles.telemetryLabelTotal}>Aggregated Confidence</Text>
+                <Text style={[styles.telemetryValueTotal, telemetry.finalConfidence >= 0.95 ? {color: Colors.success} : {color: Colors.accent}]}>
+                  {(telemetry.finalConfidence * 100).toFixed(1)}%
+                </Text>
+              </View>
+            </View>
+          )}
         </View>
       )}
 
@@ -810,5 +865,65 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
     fontSize: FontSizes.xs,
     letterSpacing: 0.5,
+  },
+  telemetryOverlayContainer: {
+    position: 'absolute',
+    bottom: 24,
+    left: 20,
+    right: 20,
+    gap: 8,
+  },
+  telemetryCard: {
+    backgroundColor: 'rgba(10, 20, 40, 0.85)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 212, 255, 0.25)',
+    borderRadius: BorderRadius.lg,
+    padding: 12,
+    ...Shadows.glow('rgba(0, 212, 255, 0.05)'),
+  },
+  telemetryTitle: {
+    ...Typography.bodySemiBold,
+    fontSize: FontSizes.xs,
+    color: Colors.textSecondary,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  telemetryGrid: {
+    gap: 4,
+  },
+  telemetryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  telemetryLabel: {
+    ...Typography.body,
+    fontSize: FontSizes.xs,
+    color: Colors.textTertiary,
+  },
+  telemetryValue: {
+    ...Typography.bodyMedium,
+    fontSize: FontSizes.xs,
+    color: Colors.textPrimary,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    marginVertical: 8,
+  },
+  telemetryRowTotal: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  telemetryLabelTotal: {
+    ...Typography.bodySemiBold,
+    fontSize: FontSizes.sm,
+    color: Colors.textSecondary,
+  },
+  telemetryValueTotal: {
+    ...Typography.heading,
+    fontSize: FontSizes.md,
   },
 });

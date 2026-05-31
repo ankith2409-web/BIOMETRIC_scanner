@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import { FaceEmbedding } from '../src/types/face';
 import { GalleryEntry } from '../src/engine/matcher';
+import { sqliteService } from './sqliteService';
 
 const isWeb = Platform.OS === 'web';
 
@@ -271,6 +272,64 @@ export const storageService = {
     if (log.matched && log.userId) {
       storageService.logAttendance(log.userId, log.name);
     }
+    this.autoSyncIfOnline().catch(err => console.log('AutoSync error:', err));
+  },
+
+  async autoSyncIfOnline(): Promise<void> {
+    const isOnline = isWeb ? (typeof navigator !== 'undefined' && navigator.onLine) : true;
+    if (!isOnline) return;
+
+    const localLogs = this.getLogs();
+    const attendanceRecords = this.getAttendanceRecords();
+    const embeddings = this.getFaceEmbeddings();
+
+    if (localLogs.length === 0 && attendanceRecords.length === 0) {
+      return;
+    }
+
+    const settings = this.getSettings();
+    const endpoint = settings.awsEndpoint;
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s timeout
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          device: Platform.OS,
+          timestamp: new Date().toISOString(),
+          logs: localLogs,
+          attendance: attendanceRecords.map(r => ({
+            name: r.userName,
+            timeAttended: {
+              checkIn: r.checkIn || null,
+              checkOut: r.checkOut || null,
+              date: r.date
+            }
+          })),
+          embeddings: embeddings.map(e => ({
+            userId: e.userId,
+            name: e.name,
+            vector: Array.from(e.vector),
+            registeredAt: e.registeredAt,
+          })),
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (response.ok || response.status === 200 || response.status === 201) {
+        this.saveLogs([]);
+        this.saveAttendanceRecords([]);
+        sqliteService.purgeAuthLogs();
+        console.log('[FaceGate][AutoSync] Auto sync and purge successful!');
+      }
+    } catch (err) {
+      console.log('[FaceGate][AutoSync] Auto sync offline or failed:', err);
+    }
   },
 
   getAuthLogs(): Array<{
@@ -356,6 +415,7 @@ export const storageService = {
     // Keep last 50 logs
     const updated = [newLog, ...logs].slice(0, 50);
     this.saveLogs(updated);
+    this.autoSyncIfOnline().catch(err => console.log('AutoSync error:', err));
   },
 
   // --- SETTINGS ---
@@ -587,3 +647,14 @@ export const storageService = {
     localStore.removeItem('logged_in_user');
   }
 };
+
+if (isWeb && typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    console.log('[FaceGate] Device is online. Triggering auto-sync...');
+    storageService.autoSyncIfOnline().catch(e => console.error(e));
+  });
+  // Also run auto-sync once at startup on web
+  setTimeout(() => {
+    storageService.autoSyncIfOnline().catch(e => console.error(e));
+  }, 3000);
+}

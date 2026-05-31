@@ -2,7 +2,6 @@ import { LandmarkPoint } from '../types/face';
 
 const LEFT_EYE = [362, 385, 387, 263, 373, 380];
 const RIGHT_EYE = [33, 160, 158, 133, 153, 144];
-const BLINK_THRESHOLD = 0.2;
 
 const dist = (a: LandmarkPoint, b: LandmarkPoint): number => {
   const dx = a.x - b.x;
@@ -26,56 +25,141 @@ export const calcEAR = (points: LandmarkPoint[]): number => {
 };
 
 export class LivenessChecker {
+  private earHistory: number[] = [];
+  private landmarkHistory: LandmarkPoint[][] = [];
+  private embeddingHistory: Float32Array[] = [];
+  
+  // History windows
+  private readonly earWindowSize = 15;
+  private readonly landmarkWindowSize = 12;
+  private readonly embeddingWindowSize = 6;
+
   private maxEAR = 0.0;
   private closedFrames = 0;
-  private blinkHistory: number[] = [];
   private blinkConfirmed = false;
 
-  update(ear: number): { blinkDetected: boolean; history: number[] } {
-    this.blinkHistory.push(ear);
-    if (this.blinkHistory.length > 10) this.blinkHistory.shift();
+  update(
+    landmarks: LandmarkPoint[],
+    ear: number,
+    embedding?: Float32Array
+  ): { livenessScore: number; livenessPass: boolean; isSpoof: boolean; blinkDetected: boolean } {
+    // 1. Maintain sliding histories
+    this.earHistory.push(ear);
+    if (this.earHistory.length > this.earWindowSize) this.earHistory.shift();
 
-    // Dynamically track the maximum eye aspect ratio seen in this session (representing open eyes)
+    this.landmarkHistory.push(landmarks.map(p => ({ x: p.x, y: p.y, z: p.z })));
+    if (this.landmarkHistory.length > this.landmarkWindowSize) this.landmarkHistory.shift();
+
+    if (embedding) {
+      this.embeddingHistory.push(new Float32Array(embedding));
+      if (this.embeddingHistory.length > this.embeddingWindowSize) this.embeddingHistory.shift();
+    }
+
+    // 2. Run blink authenticity checks
     if (ear > this.maxEAR) {
       this.maxEAR = ear;
     }
 
-    // Only run detection if we have established a reasonable open-eye baseline (at least 0.15)
     if (this.maxEAR > 0.15) {
-      const closedThreshold = this.maxEAR * 0.75; // 25% drop is considered eyes closed
-      const openThreshold = this.maxEAR * 0.88;   // return to at least 88% of open baseline
-
+      const closedThreshold = this.maxEAR * 0.70; // 30% drop is closed
+      const openThreshold = this.maxEAR * 0.85;   // 85% is open
+      
       if (ear < closedThreshold) {
         this.closedFrames += 1;
-      } else if (this.closedFrames >= 1 && this.closedFrames <= 12 && ear > openThreshold) {
-        // Dynamic transition detected: open -> closed -> open
+      } else if (this.closedFrames >= 1 && this.closedFrames <= 10 && ear > openThreshold) {
+        // Authentic blink profile transition: open -> closed -> open
         this.blinkConfirmed = true;
         this.closedFrames = 0;
+        // Keep blink confirmed state active for 15 frames (~500ms) to allow recognition loop to catch it
+        setTimeout(() => {
+          this.blinkConfirmed = false;
+        }, 600);
       } else if (ear > openThreshold) {
         this.closedFrames = 0;
       }
     }
 
+    // 3. Anti-Spoofing: Static Photo Detection
+    // Track standard deviation of core landmarks (nose tip = 1, left eye center = 33, right eye center = 263)
+    let isStaticPhoto = false;
+    let microMovementScore = 0.0;
+    let stabilityScore = 0.0;
+
+    if (this.landmarkHistory.length >= 5) {
+      // Calculate variance of nose tip position
+      const noseHistory = this.landmarkHistory.map(lh => lh[1] ?? { x: 0.5, y: 0.5, z: 0 });
+      const avgX = noseHistory.reduce((sum, p) => sum + p.x, 0) / noseHistory.length;
+      const avgY = noseHistory.reduce((sum, p) => sum + p.y, 0) / noseHistory.length;
+      
+      const varianceX = noseHistory.reduce((sum, p) => sum + (p.x - avgX) ** 2, 0) / noseHistory.length;
+      const varianceY = noseHistory.reduce((sum, p) => sum + (p.y - avgY) ** 2, 0) / noseHistory.length;
+      
+      const noseStdDev = Math.sqrt(varianceX + varianceY);
+
+      // Real human face has tiny micro-movements: StdDev is in [0.0004, 0.015]
+      if (noseStdDev < 0.0003) {
+        isStaticPhoto = true; // No motion at all = static photo spoof
+      } else if (noseStdDev <= 0.015) {
+        microMovementScore = 1.0;
+        stabilityScore = 1.0;
+      } else {
+        // Erratic fluctuation (likely shaky photo or alignment glitch)
+        microMovementScore = 0.4;
+        stabilityScore = 0.0;
+      }
+    }
+
+    // 4. Anti-Spoofing: Replay & Zero-Noise Injection Rejection
+    // Analyze embedding differences to detect frozen frames
+    let isFrozenFrame = false;
+    if (this.embeddingHistory.length >= 3) {
+      let identicalPairs = 0;
+      for (let i = 1; i < this.embeddingHistory.length; i++) {
+        const prev = this.embeddingHistory[i - 1];
+        const curr = this.embeddingHistory[i];
+        
+        let absDiff = 0;
+        for (let j = 0; j < prev.length; j++) {
+          absDiff += Math.abs(prev[j] - curr[j]);
+        }
+        
+        // Real analog camera feeds have thermal sensor noise causing embedding variance
+        if (absDiff === 0.0) {
+          identicalPairs++;
+        }
+      }
+      if (identicalPairs >= 2) {
+        isFrozenFrame = true; // Perfect identical embeddings = video replay freeze / digital mock
+      }
+    }
+
+    const isSpoof = isStaticPhoto || isFrozenFrame;
+
+    // 5. Compute Unified Liveness Score
+    let livenessScore = 0.0;
+    if (isSpoof) {
+      livenessScore = 0.0;
+    } else {
+      const blinkPart = this.blinkConfirmed ? 1.0 : 0.65; // Blinking adds high weight, but passive accepts natural presence
+      livenessScore = 0.4 * blinkPart + 0.3 * microMovementScore + 0.3 * stabilityScore;
+    }
+
+    const livenessPass = !isSpoof && livenessScore >= 0.70;
+
     return {
+      livenessScore,
+      livenessPass,
+      isSpoof,
       blinkDetected: this.blinkConfirmed,
-      history: [...this.blinkHistory],
     };
   }
 
   reset(): void {
+    this.earHistory = [];
+    this.landmarkHistory = [];
+    this.embeddingHistory = [];
     this.maxEAR = 0.0;
     this.closedFrames = 0;
-    this.blinkHistory = [];
     this.blinkConfirmed = false;
   }
 }
-
-export const isBlinking = (history: number[]): boolean => {
-  let closed = 0;
-  let opened = false;
-  for (const ear of history) {
-    if (ear < BLINK_THRESHOLD) closed += 1;
-    if (closed >= 2 && closed <= 10 && ear > BLINK_THRESHOLD) opened = true;
-  }
-  return opened;
-};

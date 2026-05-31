@@ -50,86 +50,103 @@ export interface GalleryEntry extends FaceEmbedding {
 export const matchEmbedding = (
   probe: Float32Array,
   gallery: GalleryEntry[],
-  threshold = 0.85
-): { matched: boolean; userId?: string; name?: string; confidence?: number } => {
-  if (!gallery.length) return { matched: false, confidence: 0 };
+  threshold = 0.58,
+  confidenceGapMargin = 0.08
+): MatchResult => {
+  if (!gallery.length) {
+    return {
+      matched: false,
+      bestDist: Infinity,
+      runnerUpDist: Infinity,
+      gap: 0,
+      recognitionConfidence: 0,
+      gapConfidence: 0,
+      gapPass: false,
+    };
+  }
 
-  // Track the two best matches (best + runner-up) inline
-  let bestDist = Infinity;
-  let bestUserId = '';
-  let bestName = '';
-  let runnerUpDist = Infinity;
-
-  // Per-user best distance tracking (needed because a user can have multiple entries)
-  const perUser = new Map<string, number>();
+  // Map to store the minimum distance for each unique userId
+  const perUserMinDist = new Map<string, { userId: string; name: string; minDist: number }>();
 
   for (const entry of gallery) {
-    // Use early-exit distance — skips remaining dimensions when hopeless
-    let entryBest = euclideanDistanceEarlyExit(probe, entry.vector, bestDist * bestDist);
+    let entryBest = euclideanDistance(probe, entry.vector);
 
     // Check extra embeddings captured during registration
     if (entry.extraVectors) {
       for (const v of entry.extraVectors) {
-        const d = euclideanDistanceEarlyExit(probe, v, Math.min(entryBest, bestDist) ** 2);
+        const d = euclideanDistance(probe, v);
         if (d < entryBest) entryBest = d;
       }
     }
 
-    // Deduplicate per user (a user may have multiple gallery entries)
-    const prev = perUser.get(entry.userId);
-    if (prev !== undefined && prev <= entryBest) continue;
-    perUser.set(entry.userId, entryBest);
-
-    // Update best and runner-up
-    if (entryBest < bestDist) {
-      runnerUpDist = bestDist;
-      bestDist = entryBest;
-      bestUserId = entry.userId;
-      bestName = entry.name;
-    } else if (entryBest < runnerUpDist) {
-      runnerUpDist = entryBest;
+    const existing = perUserMinDist.get(entry.userId);
+    if (!existing || entryBest < existing.minDist) {
+      perUserMinDist.set(entry.userId, {
+        userId: entry.userId,
+        name: entry.name,
+        minDist: entryBest,
+      });
     }
   }
 
-  const isMatch = bestDist <= threshold;
+  // Convert map to array and sort by minimum distance ascending
+  const sortedCandidates = Array.from(perUserMinDist.values()).sort(
+    (a, b) => a.minDist - b.minDist
+  );
 
-  // Confidence mapped from distance ratio. Higher is better, clamped.
-  // We use a piecewise function to represent human-readable confidence scores:
-  // - A perfect match (0.0 distance) is 1.0 (100% confidence)
-  // - A distance of <= 0.50 yields >= 95% confidence
-  // - A match exactly at the threshold is 85% confidence
-  let confidence = 0;
-  if (bestDist <= threshold) {
-    if (bestDist <= 0.50) {
-      confidence = 1.0 - 0.05 * (bestDist / 0.50);
+  const bestCandidate = sortedCandidates[0];
+  const runnerUpCandidate = sortedCandidates[1];
+
+  const bestDist = bestCandidate.minDist;
+  const runnerUpDist = runnerUpCandidate ? runnerUpCandidate.minDist : Infinity;
+  const gap = runnerUpDist - bestDist;
+
+  // Enforce threshold and confidence-gap checks
+  const thresholdPass = bestDist <= threshold;
+  const gapPass = runnerUpDist === Infinity || gap >= confidenceGapMargin;
+  const matched = thresholdPass && gapPass;
+
+  // Calculate recognition confidence based on Euclidean distance
+  // A distance of 0.0 maps to 1.0 (100%), and distance of threshold maps to 0.95.
+  // Formula: recognitionConfidence = 1.0 - (bestDist * (0.05 / threshold))
+  const recognitionConfidence = Math.max(
+    0,
+    Math.min(1, 1.0 - bestDist * (0.05 / threshold))
+  );
+
+  // Calculate gap confidence
+  // If gap is above margin, it ranges from 0.95 to 1.0. If below, it is 0.0.
+  let gapConfidence = 0;
+  if (gapPass) {
+    if (runnerUpDist === Infinity) {
+      gapConfidence = 1.0;
     } else {
-      const range = threshold - 0.50;
-      const progress = (bestDist - 0.50) / (range || 1);
-      confidence = 0.95 - 0.10 * progress;
+      const excess = gap - confidenceGapMargin;
+      gapConfidence = Math.min(1.0, 0.95 + excess * 0.1);
     }
-  } else {
-    const excess = bestDist - threshold;
-    const maxExcess = threshold * 0.5;
-    const factor = Math.min(1.0, excess / Math.max(maxExcess, 1e-6));
-    confidence = 0.80 * (1.0 - factor);
-  }
-  confidence = Math.max(0, Math.min(1, confidence));
-
-  // If winner is clearly better than runner-up, slightly boost confidence.
-  if (runnerUpDist < Infinity && bestDist <= threshold) {
-    const gap = runnerUpDist - bestDist;
-    if (gap > 0.12) confidence = Math.min(1.0, confidence + 0.05);
-  }
-
-  if (!isMatch) {
-    return { matched: false, confidence };
   }
 
   return {
-    matched: true,
-    userId: bestUserId,
-    name: bestName,
-    confidence,
+    matched,
+    userId: bestCandidate.userId,
+    name: bestCandidate.name,
+    bestDist,
+    runnerUpDist,
+    gap,
+    recognitionConfidence,
+    gapConfidence,
+    gapPass,
   };
 };
 
+export interface MatchResult {
+  matched: boolean;
+  userId?: string;
+  name?: string;
+  bestDist: number;
+  runnerUpDist: number;
+  gap: number;
+  recognitionConfidence: number;
+  gapConfidence: number;
+  gapPass: boolean;
+}

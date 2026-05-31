@@ -11,6 +11,20 @@ export interface AuthResult {
   name?: string;
   confidence?: number;
   livenessPass: boolean;
+  
+  // High-security confidence sub-scores
+  recogConfidence?: number;
+  livenessConfidence?: number;
+  qualityConfidence?: number;
+  temporalConfidence?: number;
+  gapConfidence?: number;
+  
+  // Telemetry details
+  bestDist?: number;
+  runnerUpDist?: number;
+  gap?: number;
+  isSpoof?: boolean;
+  historySize?: number;
 }
 
 export interface DetectionBox {
@@ -57,4 +71,7 @@ export interface FrameProcessResult {
   alignedFaceTensor?: any;
   lightingScore?: number;
   lightingIssue?: 'too_dark' | 'too_bright' | 'shadow' | 'backlight' | null;
+  livenessScore?: number;
+  isSpoof?: boolean;
+  qualityConfidence?: number;
 }

@@ -19,10 +19,63 @@ class FrameProcessorEngine {
   private liveness = new LivenessChecker();
   // Lowered from 0.5 → 0.40: catches faces in shadow or partial occlusion.
   private readonly detectScoreThreshold = 0.40;
+  private lastBox: DetectionBox | null = null;
+  private temporalHistory: { userId: string; distance: number; name: string }[] = [];
+  private readonly HISTORY_DEPTH = 3;
 
   resetLiveness(): void {
     this.liveness.reset();
     faceMeshModule.reset();
+    this.lastBox = null;
+    this.temporalHistory = [];
+  }
+
+  private computeIoU(boxA: DetectionBox, boxB: DetectionBox): number {
+    const xA = Math.max(boxA.x, boxB.x);
+    const yA = Math.max(boxA.y, boxB.y);
+    const xB = Math.min(boxA.x + boxA.width, boxB.x + boxB.width);
+    const yB = Math.min(boxA.y + boxB.height, boxB.y + boxB.height);
+
+    const interWidth = Math.max(0, xB - xA);
+    const interHeight = Math.max(0, yB - yA);
+    const interArea = interWidth * interHeight;
+
+    const areaA = boxA.width * boxA.height;
+    const areaB = boxB.width * boxB.height;
+    const unionArea = areaA + areaB - interArea;
+
+    return unionArea > 0 ? interArea / unionArea : 0;
+  }
+
+  private computeImageQualityConfidence(
+    detection: DetectionBox,
+    lightingScore: number,
+    blurScore: number,
+    faceAngle: number
+  ): number {
+    const lightingQuality = lightingScore / 100;
+    const sharpnessQuality = Math.max(0, Math.min(1, (blurScore - 8) / 8));
+    const cx = detection.x + detection.width / 2;
+    const cy = detection.y + detection.height / 2;
+    const distFromCenter = Math.sqrt((cx - 0.5) ** 2 + (cy - 0.5) ** 2);
+    const centeringQuality = Math.max(0, Math.min(1, 1 - (distFromCenter - 0.1) / 0.2));
+    const poseQuality = Math.max(0, Math.min(1, 1 - (Math.abs(faceAngle) - 10) / 20));
+    let sizeQuality = 1.0;
+    if (detection.width < 0.30) {
+      sizeQuality = Math.max(0, (detection.width - 0.20) / 0.10);
+    } else if (detection.width > 0.60) {
+      sizeQuality = Math.max(0, 1 - (detection.width - 0.60) / 0.20);
+    }
+    const occlusionQuality = Math.max(0, Math.min(1, (detection.score - 0.40) / 0.60));
+
+    const qualityConfidence =
+      0.25 * lightingQuality +
+      0.25 * sharpnessQuality +
+      0.20 * centeringQuality +
+      0.20 * poseQuality +
+      0.10 * occlusionQuality;
+
+    return Math.max(0, Math.min(1, qualityConfidence));
   }
 
   private parseAllDetections(raw: unknown): DetectionBox[] {
@@ -177,31 +230,44 @@ class FrameProcessorEngine {
       finalQualityMessage = getLightingMessage(lighting.issue);
     }
 
-    const sig = {
-      ...meshResult.result.livenessSignal,
-      blinkDetected: this.liveness.update(
-        (meshResult.result.livenessSignal.earLeft + meshResult.result.livenessSignal.earRight) / 2
-      ).blinkDetected,
-    };
-    const ear = (sig.earLeft + sig.earRight) / 2;
-    const livenessPass = sig.blinkDetected || sig.smileDetected || sig.headTurnDetected;
     const landmarks = this.floatArrayToPoints(meshResult.result.landmarks);
+    const ear = (meshResult.result.livenessSignal.earLeft + meshResult.result.livenessSignal.earRight) / 2;
+
+    const luma = new Float32Array(cropped192.length / 3);
+    for (let i = 0, j = 0; i < cropped192.length; i += 3, j += 1) {
+      luma[j] = 0.299 * cropped192[i] + 0.587 * cropped192[i + 1] + 0.114 * cropped192[i + 2];
+    }
+    const blurScore = this.computeSharpness(luma, 192, 192);
+
+    const qualityConfidence = this.computeImageQualityConfidence(
+      detection,
+      lighting.score,
+      blurScore,
+      meshResult.result.faceAngle
+    );
 
     const t3 = Date.now();
     const alignedNormalizedFloatArray = meshResult.result.alignedFaceTensor.dataSync();
     const embeddingOut = await models.mobileFaceNet.run(alignedNormalizedFloatArray);
+    const embedding = this.parseEmbedding(embeddingOut);
     timing.embed = toMs(t3);
     timing.total = toMs(t0);
+
+    const livenessResult = this.liveness.update(landmarks, ear, embedding);
+    const sig = {
+      ...meshResult.result.livenessSignal,
+      blinkDetected: livenessResult.blinkDetected,
+    };
 
     return {
       faceFound: true,
       detection,
       landmarks,
       ear,
-      livenessPass,
+      livenessPass: livenessResult.livenessPass,
       qualityPass: finalQualityPass,
       qualityMessage: finalQualityMessage,
-      embedding: this.parseEmbedding(embeddingOut),
+      embedding,
       timing,
       leftEyeCenter: meshResult.result.leftEyeCenter,
       rightEyeCenter: meshResult.result.rightEyeCenter,
@@ -215,29 +281,129 @@ class FrameProcessorEngine {
       alignedFaceTensor: meshResult.result.alignedFaceTensor,
       lightingScore: lighting.score,
       lightingIssue: lighting.issue,
+      livenessScore: livenessResult.livenessScore,
+      isSpoof: livenessResult.isSpoof,
+      qualityConfidence,
     };
   }
 
   async processForAuth(frameRGB: Uint8Array, gallery?: any[], log?: (msg: string) => void) {
     const result = await this.processForEmbedding(frameRGB, log);
-    if (!result.embedding) {
+    if (!result.faceFound || !result.detection || !result.embedding) {
+      this.resetLiveness();
+      this.lastBox = null;
+      this.temporalHistory = [];
       return {
-        auth: { matched: false, livenessPass: !!result.livenessPass },
+        auth: { matched: false, livenessPass: false, isSpoof: false, confidence: 0 },
         process: result,
       };
     }
 
-    // Use provided gallery, else fall back to full multi-embedding gallery.
+    const currentBox = result.detection;
+    if (this.lastBox) {
+      const iou = this.computeIoU(this.lastBox, currentBox);
+      if (iou < 0.30) {
+        log?.(`[processor] Face switch detected (IoU=${iou.toFixed(2)} < 0.30). Resetting temporal state.`);
+        this.resetLiveness();
+        this.temporalHistory = [];
+      }
+    }
+    this.lastBox = currentBox;
+
     const fullGallery = gallery && gallery.length ? gallery : storageService.getFaceEmbeddingsAsGallery();
     const threshold = storageService.getSettings().threshold;
-    const matched = matchEmbedding(result.embedding, fullGallery, threshold);
+    const confidenceGapMargin = 0.08;
+
+    const match = matchEmbedding(result.embedding, fullGallery, threshold, confidenceGapMargin);
+    
+    // Add current match to temporal history
+    const matchedUserId = match.userId || 'unknown';
+    const matchedName = match.name || 'Unknown User';
+    this.temporalHistory.push({
+      userId: matchedUserId,
+      distance: match.bestDist,
+      name: matchedName,
+    });
+    if (this.temporalHistory.length > this.HISTORY_DEPTH) {
+      this.temporalHistory.shift();
+    }
+
+    const sameUserCount = this.temporalHistory.filter(h => h.userId === matchedUserId).length;
+    const temporalConfidence = sameUserCount / this.HISTORY_DEPTH;
+    const temporalConsistencyPass = sameUserCount === this.HISTORY_DEPTH && matchedUserId !== 'unknown';
+
+    const avgDistance = this.temporalHistory.reduce((sum, h) => sum + h.distance, 0) / this.temporalHistory.length;
+
+    const livenessConfidence = result.livenessScore ?? 0.0;
+    const isSpoof = result.isSpoof ?? false;
+    const livenessPass = result.livenessPass ?? false;
+    const qualityConfidence = result.qualityConfidence ?? 0.0;
+    const recogConfidence = match.recognitionConfidence;
+    const gapConfidence = match.gapConfidence;
+    const gapPass = match.gapPass;
+
+    // Weights
+    const w_rec = 0.35;
+    const w_live = 0.25;
+    const w_qual = 0.15;
+    const w_temp = 0.15;
+    const w_gap = 0.10;
+
+    const finalConfidence =
+      w_rec * recogConfidence +
+      w_live * livenessConfidence +
+      w_qual * qualityConfidence +
+      w_temp * temporalConfidence +
+      w_gap * gapConfidence;
+
+    const finalMatched =
+      !isSpoof &&
+      avgDistance <= threshold &&
+      gapPass &&
+      livenessPass &&
+      temporalConsistencyPass &&
+      finalConfidence >= 0.95;
+
+    console.log(`[FaceGate][Auth] Telemetry:
+      Candidate ID: ${matchedUserId} (${matchedName})
+      Avg Distance: ${avgDistance.toFixed(4)} (current: ${match.bestDist.toFixed(4)})
+      Runner-up Dist: ${match.runnerUpDist.toFixed(4)}
+      Confidence Gap: ${match.gap.toFixed(4)}
+      Is Spoof: ${isSpoof}
+      Liveness Pass: ${livenessPass}
+      Temporal Pass: ${temporalConsistencyPass} (History size: ${this.temporalHistory.length}/${this.HISTORY_DEPTH})
+      
+      Confidence Components:
+        - Recognition: ${(recogConfidence * 100).toFixed(1)}% (weight: ${w_rec})
+        - Liveness: ${(livenessConfidence * 100).toFixed(1)}% (weight: ${w_live})
+        - Image Quality: ${(qualityConfidence * 100).toFixed(1)}% (weight: ${w_qual})
+        - Temporal: ${(temporalConfidence * 100).toFixed(1)}% (weight: ${w_temp})
+        - Gap: ${(gapConfidence * 100).toFixed(1)}% (weight: ${w_gap})
+      Final Aggregated Confidence: ${(finalConfidence * 100).toFixed(1)}% (Threshold: 95%)
+      Auth Result: ${finalMatched ? 'SUCCESS' : 'FAILED'}
+    `);
+
     return {
       auth: {
-        matched: matched.matched,
-        userId: matched.userId,
-        name: matched.name,
-        confidence: matched.confidence,
-        livenessPass: true,
+        matched: finalMatched,
+        userId: finalMatched ? matchedUserId : undefined,
+        name: finalMatched ? matchedName : undefined,
+        confidence: finalConfidence,
+        livenessPass,
+        
+        // Sub-scores
+        recogConfidence,
+        livenessConfidence,
+        qualityConfidence,
+        temporalConfidence,
+        gapConfidence,
+        
+        // Telemetry details
+        bestDist: match.bestDist,
+        runnerUpDist: match.runnerUpDist,
+        gap: match.gap,
+        isSpoof,
+        historySize: this.temporalHistory.length,
       },
       process: result,
     };
