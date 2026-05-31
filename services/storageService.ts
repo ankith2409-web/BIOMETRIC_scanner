@@ -424,49 +424,47 @@ export const storageService = {
         note: 'Checked in via Biometric Scanner'
       });
       
-      let count = 0;
-      for (let i = 1; i <= 10; i++) {
-        const pastDate = new Date();
-        pastDate.setDate(now.getDate() - i);
-        if (pastDate.getDay() === 0) continue; // skip Sundays
-        
-        const year = pastDate.getFullYear();
-        const month = String(pastDate.getMonth() + 1).padStart(2, '0');
-        const day = String(pastDate.getDate()).padStart(2, '0');
-        const dateStr = `${year}-${month}-${day}`;
-        
-        const notes = [
-          "Additional works (2VUPs, MR-10 junction flyover...)",
-          "Standard shift check-in",
-          "Main office check-in",
-          "Project sync & alignment",
-          "Site audit",
-          "Standard shift",
-          "Biometric checkpoint entry"
-        ];
-        
-        let checkInVal: string | undefined = '09:30 AM';
-        let checkOutVal: string | undefined = '06:30 PM';
-        
-        if (count === 1) {
-          checkOutVal = undefined;
-        } else if (count === 2) {
-          checkInVal = undefined;
-        }
+      // Seed past records for a 10-day tracking window
+      // John Doe (id: '1'): present on 7 past days
+      // Sarah Chen (id: '2'): present on 8 past days
+      // Mike Ross (id: '3'): present on 6 past days
+      // Emma Wilson (id: '4'): present on 2 past days
+      const userPresences = {
+        '1': [1, 2, 3, 5, 6, 7, 8],
+        '2': [1, 2, 3, 4, 6, 7, 8, 9],
+        '3': [2, 3, 5, 6, 8, 9],
+        '4': [3, 7]
+      };
+      
+      const userNames = {
+        '1': 'John Doe',
+        '2': 'Sarah Chen',
+        '3': 'Mike Ross',
+        '4': 'Emma Wilson'
+      };
 
-        mockRecords.push({
-          id: `att_mock_${i}`,
-          userId: targetUid,
-          userName: targetName,
-          date: dateStr,
-          checkIn: checkInVal,
-          checkOut: checkOutVal,
-          note: notes[count % notes.length]
+      Object.entries(userPresences).forEach(([uid, days]) => {
+        days.forEach((dayOffset, idx) => {
+          const pastDate = new Date();
+          pastDate.setDate(now.getDate() - dayOffset);
+          if (pastDate.getDay() === 0) return; // skip Sundays
+          
+          const year = pastDate.getFullYear();
+          const month = String(pastDate.getMonth() + 1).padStart(2, '0');
+          const day = String(pastDate.getDate()).padStart(2, '0');
+          const dateStr = `${year}-${month}-${day}`;
+
+          mockRecords.push({
+            id: `att_seed_${uid}_${idx}`,
+            userId: uid,
+            userName: userNames[uid as '1' | '2' | '3' | '4'],
+            date: dateStr,
+            checkIn: '09:30 AM',
+            checkOut: '06:30 PM',
+            note: 'Standard shift check-in'
+          });
         });
-        
-        count++;
-        if (count >= 7) break;
-      }
+      });
       
       storageService.saveAttendanceRecords(mockRecords);
       records = mockRecords;
@@ -474,7 +472,7 @@ export const storageService = {
       try {
         records = JSON.parse(data);
         // Force re-seed if the records are mock but lack the check-in-only or check-out-only styles
-        const isAllMock = records.length > 0 && records.every(r => r.id.startsWith('att_mock_'));
+        const isAllMock = records.length > 0 && records.every(r => r.id.startsWith('att_mock_') || r.id.startsWith('att_today_') || r.id.startsWith('att_seed_'));
         const hasCheckInOnly = records.some(r => r.checkIn && !r.checkOut);
         const hasCheckOutOnly = records.some(r => !r.checkIn && r.checkOut);
         if (isAllMock && (!hasCheckInOnly || !hasCheckOutOnly)) {
@@ -565,11 +563,14 @@ export const storageService = {
       avgHoursStr = `${h}h ${m}m`;
     }
     
-    const percentage = present > 0 ? 97 : 0;
+    // Assume a 10-day tracking window
+    const trackingPeriod = 10;
+    const absent = Math.max(0, trackingPeriod - present);
+    const percentage = Math.round((present / trackingPeriod) * 100);
     
     return {
       present,
-      absent: 0,
+      absent,
       avgHours: avgHoursStr,
       percentage
     };

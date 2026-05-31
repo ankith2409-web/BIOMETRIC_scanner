@@ -40,7 +40,7 @@ function UserCard({
   index, 
   onDelete 
 }: { 
-  user: User & { todayRecord?: AttendanceRecord }; 
+  user: User & { attendanceScore?: number; absentDays?: number }; 
   index: number; 
   onDelete: () => void 
 }) {
@@ -51,24 +51,11 @@ function UserCard({
     transform: [{ scale: scale.value }],
   }));
 
-  const record = user.todayRecord;
-  const hasCheckIn = !!record?.checkIn;
-  const hasCheckOut = !!record?.checkOut;
+  const score = user.attendanceScore ?? 0;
+  const absent = user.absentDays ?? 0;
 
-  // Determine today's status label and variant
-  let statusLabel = t('pending') || 'Pending';
-  let statusVariant: 'pending' | 'success' | 'warning' | 'danger' = 'pending';
-
-  if (hasCheckIn && hasCheckOut) {
-    statusLabel = t('legendCompleted') || 'Completed';
-    statusVariant = 'success';
-  } else if (hasCheckIn) {
-    statusLabel = t('legendCheckedIn') || 'Checked In';
-    statusVariant = 'success';
-  } else if (hasCheckOut) {
-    statusLabel = t('legendCheckedOut') || 'Checked Out';
-    statusVariant = 'secondary';
-  }
+  // Color coding for score
+  const scoreColor = score >= 80 ? Colors.success : score >= 50 ? Colors.warning : Colors.danger;
 
   return (
     <Animated.View
@@ -82,43 +69,32 @@ function UserCard({
           onLongPress={onDelete}
         >
           <View style={styles.userCard}>
-            <View style={[
-              styles.userAccentBorder,
-              statusVariant === 'success' && { backgroundColor: Colors.success },
-              statusVariant === 'secondary' && { backgroundColor: Colors.secondary }
-            ]} />
+            <View style={[styles.userAccentBorder, { backgroundColor: scoreColor }]} />
             <View style={styles.userAvatarRing}>
               <LinearGradient
-                colors={statusVariant === 'success' ? [Colors.success, '#00CC6A'] : [Colors.accent, Colors.secondary]}
+                colors={[scoreColor, scoreColor + '80']}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.avatarGradientRing}
               >
                 <View style={styles.userAvatar}>
-                  <Text style={styles.userInitials}>{initials}</Text>
+                  <Text style={[styles.userInitials, { color: scoreColor }]}>{initials}</Text>
                 </View>
               </LinearGradient>
             </View>
             <View style={styles.userInfo}>
               <Text style={styles.userName}>{user.name}</Text>
               <View style={styles.userMeta}>
-                <MaterialCommunityIcons name="clock-outline" size={12} color={Colors.textTertiary} />
-                <Text style={styles.userDate}>
-                  {record ? (
-                    `${record.checkIn || '--:--'} → ${record.checkOut || '--:--'}`
-                  ) : (
-                    new Date(user.registeredAt).toLocaleDateString('en-US', {
-                      month: 'short', day: 'numeric', year: 'numeric'
-                    })
-                  )}
+                <MaterialCommunityIcons name="percent" size={12} color={scoreColor} style={{ marginRight: 2 }} />
+                <Text style={[styles.userDate, { color: scoreColor, fontWeight: '600', marginRight: 12 }]}>
+                  {score}% Score
+                </Text>
+                <MaterialCommunityIcons name="calendar-remove" size={12} color={Colors.danger} style={{ marginRight: 2 }} />
+                <Text style={[styles.userDate, { color: Colors.danger }]}>
+                  {absent} {absent === 1 ? 'day' : 'days'} absent
                 </Text>
               </View>
             </View>
-            <StatusBadge
-              label={statusLabel}
-              variant={statusVariant}
-              pulsing={statusVariant === 'pending' || (hasCheckIn && !hasCheckOut)}
-            />
             <Pressable onPress={onDelete} style={styles.deleteBtn}>
               <MaterialCommunityIcons name="trash-can-outline" size={18} color={Colors.danger} />
             </Pressable>
@@ -427,27 +403,20 @@ export default function AttendanceScreen() {
     // Load general users list
     const fetchedUsers = storageService.getUsers();
     
-    // Load all attendance records
-    const allRecords = storageService.getAttendanceRecords();
-    const todayStr = new Date().toISOString().split('T')[0];
+    // Filter out admin
+    const teamUsers = fetchedUsers.filter(u => u.id !== 'admin');
     
-    // Filter for today's records, excluding 'admin'
-    const todayRecords = allRecords.filter(r => r.date === todayStr && r.userId !== 'admin');
-    
-    // Map today's records back to users
-    const attendedUsers = todayRecords.map(record => {
-      const user = fetchedUsers.find(u => u.id === record.userId);
+    // Map team users to include their calculated stats
+    const usersWithStats = teamUsers.map(user => {
+      const stats = storageService.getAttendanceStats(user.id);
       return {
-        id: record.userId,
-        name: record.userName || user?.name || 'Unknown User',
-        registeredAt: user?.registeredAt || record.date,
-        status: user?.status || 'active',
-        // Attach today's record to the user object so the UserCard can show it
-        todayRecord: record,
+        ...user,
+        attendanceScore: stats.percentage,
+        absentDays: stats.absent,
       };
     });
     
-    setUsers(attendedUsers);
+    setUsers(usersWithStats);
     
     // Load logged in user info (for Me)
     const currentUser = storageService.getLoggedInUser();
@@ -459,6 +428,7 @@ export default function AttendanceScreen() {
       setAttendanceLogs(records);
       
       // Compute Today's Record
+      const todayStr = new Date().toISOString().split('T')[0];
       const todayRec = records.find(r => r.date === todayStr);
       setTodayRecord(todayRec || null);
       
@@ -470,6 +440,7 @@ export default function AttendanceScreen() {
       const records = storageService.getAttendanceRecords('1');
       setAttendanceLogs(records);
       
+      const todayStr = new Date().toISOString().split('T')[0];
       const todayRec = records.find(r => r.date === todayStr);
       setTodayRecord(todayRec || null);
       
@@ -748,14 +719,12 @@ export default function AttendanceScreen() {
           {filteredUsers.length === 0 && searchQuery === '' ? (
             <View style={styles.emptyState}>
               <View style={styles.emptyIconContainer}>
-                <MaterialCommunityIcons name="calendar-blank-outline" size={64} color={Colors.textTertiary} />
+                <MaterialCommunityIcons name="account-group-outline" size={64} color={Colors.textTertiary} />
               </View>
-              <Text style={styles.emptyTitle}>{t('noAttendanceToday') || 'No Attendance Today'}</Text>
-              <Text style={styles.emptySubtitle}>
-                {t('noAttendanceTodayDesc') || 'No biometric entries have been recorded for today yet.'}
-              </Text>
+              <Text style={styles.emptyTitle}>{t('noUsers')}</Text>
+              <Text style={styles.emptySubtitle}>{t('noUsersDesc')}</Text>
               <AnimatedButton
-                label={t('registerFirst') || 'Register New Face'}
+                label={t('registerFirst')}
                 onPress={() => router.push('/register')}
                 icon="account-plus"
                 style={{ marginTop: 24 }}
