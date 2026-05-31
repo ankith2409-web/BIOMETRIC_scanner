@@ -273,8 +273,12 @@ export class FaceMeshModule {
     const physicalRight = (noseCropX - 96) > 12;
     const dynamicLeft = this.initialNoseCropX !== null && noseShift < -15;
     const dynamicRight = this.initialNoseCropX !== null && noseShift > 15;
-    const headTurnLeftDetected = physicalLeft || dynamicLeft;
-    const headTurnRightDetected = physicalRight || dynamicRight;
+    
+    // Front camera is mirrored, so:
+    // - Turning your head to the left causes the nose to move to the right in the mirrored feed (x increases).
+    // - Turning your head to the right causes the nose to move to the left in the mirrored feed (x decreases).
+    const headTurnLeftDetected = physicalRight || dynamicRight;
+    const headTurnRightDetected = physicalLeft || dynamicLeft;
 
     // 6. Apply Affine Warp to straighten and center the face, cropping to 112x112
     const alignedFaceBuffer = this.affineWarpAndCrop(
