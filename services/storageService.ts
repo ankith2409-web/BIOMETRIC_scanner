@@ -403,6 +403,26 @@ export const storageService = {
       
       const mockRecords: AttendanceRecord[] = [];
       const now = new Date();
+      const todayStr = now.toISOString().split('T')[0];
+
+      // Add today's records for other users to show in Team Attendance list
+      mockRecords.push({
+        id: 'att_today_1',
+        userId: '1',
+        userName: 'John Doe',
+        date: todayStr,
+        checkIn: '09:15 AM',
+        checkOut: '06:00 PM',
+        note: 'Checked in via Biometric Scanner'
+      });
+      mockRecords.push({
+        id: 'att_today_2',
+        userId: '2',
+        userName: 'Sarah Chen',
+        date: todayStr,
+        checkIn: '08:45 AM',
+        note: 'Checked in via Biometric Scanner'
+      });
       
       let count = 0;
       for (let i = 1; i <= 10; i++) {
