@@ -83,8 +83,10 @@ export default function OfflineBanner() {
 
     const triggerAutoSync = async () => {
       const localLogs = storageService.getLogs();
+      const attendanceRecords = storageService.getAttendanceRecords();
       const embeddings = storageService.getFaceEmbeddings();
-      if (localLogs.length === 0) {
+
+      if (localLogs.length === 0 && attendanceRecords.length === 0) {
         setTimeout(() => {
           setVisible(false);
           setStatus('online');
@@ -106,6 +108,14 @@ export default function OfflineBanner() {
             device: Platform.OS,
             timestamp: new Date().toISOString(),
             logs: localLogs,
+            attendance: attendanceRecords.map(r => ({
+              name: r.userName,
+              timeAttended: {
+                checkIn: r.checkIn || null,
+                checkOut: r.checkOut || null,
+                date: r.date
+              }
+            })),
             embeddings: embeddings.map(e => ({
               userId: e.userId,
               name: e.name,
@@ -120,12 +130,14 @@ export default function OfflineBanner() {
 
         if (response.ok || response.status === 200 || response.status === 201) {
           storageService.saveLogs([]);
+          storageService.saveAttendanceRecords([]);
           sqliteService.purgeAuthLogs();
           console.log('[FaceGate][AutoSync] Successful upload & database purge.');
         }
       } catch (err) {
         console.warn('[FaceGate][AutoSync] Auto-upload failed, applying demo fallback purge:', err);
         storageService.saveLogs([]);
+        storageService.saveAttendanceRecords([]);
         sqliteService.purgeAuthLogs();
       }
 

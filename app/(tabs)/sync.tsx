@@ -108,16 +108,18 @@ export default function SyncScreen() {
   const syncedCount = logs.filter(l => l.status === 'synced').length;
 
   const handleSync = async () => {
-    if (logs.length === 0) {
-      alert('No pending logs to sync.');
+    const localLogs = storageService.getLogs();
+    const attendanceRecords = storageService.getAttendanceRecords();
+    const embeddings = storageService.getFaceEmbeddings();
+
+    if (localLogs.length === 0 && attendanceRecords.length === 0) {
+      alert('No pending logs or attendance records to sync.');
       return;
     }
 
     setSyncing(true);
     const settings = storageService.getSettings();
     const endpoint = settings.awsEndpoint;
-    const localLogs = storageService.getLogs();
-    const embeddings = storageService.getFaceEmbeddings();
 
     try {
       const controller = new AbortController();
@@ -131,6 +133,14 @@ export default function SyncScreen() {
           device: Platform.OS,
           timestamp: new Date().toISOString(),
           logs: localLogs,
+          attendance: attendanceRecords.map(r => ({
+            name: r.userName,
+            timeAttended: {
+              checkIn: r.checkIn || null,
+              checkOut: r.checkOut || null,
+              date: r.date
+            }
+          })),
           embeddings: embeddings.map(e => ({
             userId: e.userId,
             name: e.name,
@@ -144,8 +154,9 @@ export default function SyncScreen() {
       clearTimeout(timeoutId);
 
       if (response.ok || response.status === 200 || response.status === 201) {
-        // Purge local logs
+        // Purge local logs & attendance records
         storageService.saveLogs([]);
+        storageService.saveAttendanceRecords([]);
         sqliteService.purgeAuthLogs();
         const syncedLogs = logs.map(l => ({ ...l, status: 'synced' as const }));
         setLogs(syncedLogs);
@@ -159,6 +170,7 @@ export default function SyncScreen() {
       // Simulated upload fallback for demonstration
       setTimeout(() => {
         storageService.saveLogs([]);
+        storageService.saveAttendanceRecords([]);
         sqliteService.purgeAuthLogs();
         const syncedLogs = logs.map(l => ({ ...l, status: 'synced' as const }));
         setLogs(syncedLogs);
