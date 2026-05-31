@@ -508,7 +508,7 @@ class FrameProcessorEngineWeb {
       gapPass &&
       livenessPass &&
       temporalConsistencyPass &&
-      finalConfidence >= 0.95;
+      finalConfidence >= 0.82;
 
     console.log(`[FaceGate][Web][Auth] Telemetry:
       Candidate ID: ${matchedUserId} (${matchedName})
