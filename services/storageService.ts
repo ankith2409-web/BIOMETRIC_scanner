@@ -462,7 +462,7 @@ export const storageService = {
         body: JSON.stringify({
           device: Platform.OS,
           timestamp: new Date().toISOString(),
-          logs: localLogs,
+          logs: localLogs.filter(l => l.status === 'success'),
           attendance: attendanceRecords.map(r => ({
             name: r.userName,
             timeAttended: {
