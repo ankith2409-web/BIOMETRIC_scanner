@@ -57,7 +57,26 @@ export const sqliteService = {
         timestamp TEXT NOT NULL,
         status TEXT NOT NULL,
         confidence INTEGER NOT NULL
+    `);
+
+    // Clean up duplicate names and phone numbers
+    database.execSync(`
+      DELETE FROM users 
+      WHERE id NOT IN (
+        SELECT MIN(id) 
+        FROM users 
+        GROUP BY LOWER(TRIM(name))
       );
+      
+      DELETE FROM users 
+      WHERE phone IS NOT NULL AND TRIM(phone) != '' AND id NOT IN (
+        SELECT MIN(id) 
+        FROM users 
+        GROUP BY TRIM(phone)
+      );
+
+      DELETE FROM embeddings WHERE user_id NOT IN (SELECT id FROM users);
+      DELETE FROM attendance WHERE user_id NOT IN (SELECT id FROM users);
     `);
 
     // Seed mock users if empty
@@ -185,6 +204,29 @@ export const sqliteService = {
   saveUser(user: User): void {
     const database = getDb();
     if (!database) return;
+
+    // Check duplicate name case-insensitively
+    const dupName = database.getFirstSync<{ id: string }>(
+      'SELECT id FROM users WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) AND id != ? LIMIT 1',
+      [user.name, user.id]
+    );
+    if (dupName) {
+      console.warn(`User with name "${user.name}" already exists. Skipping save.`);
+      return;
+    }
+
+    // Check duplicate phone
+    if (user.phone && user.phone.trim() !== '') {
+      const dupPhone = database.getFirstSync<{ id: string }>(
+        'SELECT id FROM users WHERE TRIM(phone) = TRIM(?) AND id != ? LIMIT 1',
+        [user.phone, user.id]
+      );
+      if (dupPhone) {
+        console.warn(`User with phone "${user.phone}" already exists. Skipping save.`);
+        return;
+      }
+    }
+
     database.runSync(
       'INSERT OR REPLACE INTO users (id, name, phone, registered_at, status) VALUES (?, ?, ?, ?, ?)',
       [user.id, user.name, user.phone ?? null, user.registeredAt, user.status]

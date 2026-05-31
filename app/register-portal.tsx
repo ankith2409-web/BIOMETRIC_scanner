@@ -736,6 +736,24 @@ export default function RegisterPortalScreen() {
 
   const handleStartScan = () => {
     if (enrollName.trim().length >= 2 && enrollPhone.length >= 10) {
+      const existingUsers = storageService.getUsers();
+      
+      const dupName = existingUsers.some(
+        u => u.name.toLowerCase().trim() === enrollName.toLowerCase().trim()
+      );
+      if (dupName) {
+        alert("A user with this name already exists. Please choose a unique name.");
+        return;
+      }
+
+      const dupPhone = existingUsers.some(
+        u => u.phone && u.phone.trim() === enrollPhone.trim()
+      );
+      if (dupPhone) {
+        alert("A user with this mobile number already exists. Please enter a unique number.");
+        return;
+      }
+
       setStage('scan-center');
       frameProcessorEngine.resetLiveness();
       consecutiveValidFrames.current = 0;

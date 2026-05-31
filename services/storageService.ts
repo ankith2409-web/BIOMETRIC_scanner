@@ -95,9 +95,72 @@ const MOCK_LOGS: AuthLog[] = [
 ];
 
 export const storageService = {
+  cleanupDuplicates(): void {
+    if (!isWeb) return;
+    try {
+      const usersData = localStore.getItem(USERS_KEY);
+      if (!usersData) return;
+      const users = JSON.parse(usersData) as User[];
+      
+      const seenNames = new Set<string>();
+      const seenPhones = new Set<string>();
+      const uniqueUsers: User[] = [];
+      const deletedUserIds = new Set<string>();
+
+      for (const u of users) {
+        const lowerName = u.name.toLowerCase().trim();
+        const phone = u.phone?.trim() || '';
+
+        let isDuplicate = false;
+        if (seenNames.has(lowerName)) {
+          isDuplicate = true;
+        } else if (phone && seenPhones.has(phone)) {
+          isDuplicate = true;
+        }
+
+        if (isDuplicate) {
+          deletedUserIds.add(u.id);
+        } else {
+          seenNames.add(lowerName);
+          if (phone) seenPhones.add(phone);
+          uniqueUsers.push(u);
+        }
+      }
+
+      if (deletedUserIds.size > 0) {
+        localStore.setItem(USERS_KEY, JSON.stringify(uniqueUsers));
+
+        // Delete associated embeddings
+        const embData = localStore.getItem(EMBEDDINGS_KEY);
+        if (embData) {
+          const embeddings = JSON.parse(embData) as Array<any>;
+          const filteredEmbeddings = embeddings.filter(e => {
+            const idVal = e.user_id !== undefined ? String(e.user_id) : (e.userId ?? '');
+            const targetVal = idVal.startsWith('user_') ? idVal : `user_${idVal}`;
+            const targetId = idVal.replace('user_', '');
+            return !deletedUserIds.has(idVal) && !deletedUserIds.has(targetVal) && !deletedUserIds.has(targetId);
+          });
+          localStore.setItem(EMBEDDINGS_KEY, JSON.stringify(filteredEmbeddings));
+        }
+
+        // Delete associated attendance
+        const attData = localStore.getItem(ATTENDANCE_KEY);
+        if (attData) {
+          const attendance = JSON.parse(attData) as Array<any>;
+          const filteredAttendance = attendance.filter(a => !deletedUserIds.has(a.userId));
+          localStore.setItem(ATTENDANCE_KEY, JSON.stringify(filteredAttendance));
+        }
+      }
+    } catch (e) {
+      console.warn('LocalStorage duplicates cleanup error:', e);
+    }
+  },
+
   // --- USERS ---
   getUsers(): User[] {
     if (!isWeb) return sqliteService.getUsers();
+
+    this.cleanupDuplicates();
 
     const data = localStore.getItem(USERS_KEY);
     if (!data) {
@@ -128,6 +191,27 @@ export const storageService = {
       return;
     }
     const users = this.getUsers();
+
+    // Check duplicate name case-insensitively
+    const dupName = users.some(
+      u => u.id !== user.id && u.name.toLowerCase().trim() === user.name.toLowerCase().trim()
+    );
+    if (dupName) {
+      console.warn(`User with name "${user.name}" already exists on Web. Skipping.`);
+      return;
+    }
+
+    // Check duplicate phone
+    if (user.phone && user.phone.trim() !== '') {
+      const dupPhone = users.some(
+        u => u.id !== user.id && u.phone && u.phone.trim() === user.phone.trim()
+      );
+      if (dupPhone) {
+        console.warn(`User with phone "${user.phone}" already exists on Web. Skipping.`);
+        return;
+      }
+    }
+
     const existingIndex = users.findIndex(u => u.id === user.id);
     if (existingIndex > -1) {
       users[existingIndex] = user;

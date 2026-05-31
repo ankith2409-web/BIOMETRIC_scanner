@@ -442,6 +442,14 @@ export default function RegisterScreen() {
 
   const handleStartScan = () => {
     if (enrollName.trim().length >= 2) {
+      const existingUsers = storageService.getUsers();
+      const dupName = existingUsers.some(
+        u => u.name.toLowerCase().trim() === enrollName.toLowerCase().trim()
+      );
+      if (dupName) {
+        alert("A user with this name already exists. Please choose a unique name.");
+        return;
+      }
       frameProcessorEngine.resetLiveness();
       setHasEnteredName(true);
     }
