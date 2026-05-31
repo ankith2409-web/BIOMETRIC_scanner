@@ -400,7 +400,6 @@ export const storageService = {
       clearTimeout(timeoutId);
 
       if (response.ok || response.status === 200 || response.status === 201) {
-        this.saveLogs([]);
         this.saveAttendanceRecords([]);
         sqliteService.purgeAuthLogs();
         console.log('[FaceGate][AutoSync] Auto sync and purge successful!');
@@ -410,7 +409,6 @@ export const storageService = {
       }
     } catch (err) {
       console.log('[FaceGate][AutoSync] Auto sync offline or failed, applying demo fallback purge:', err);
-      this.saveLogs([]);
       this.saveAttendanceRecords([]);
       sqliteService.purgeAuthLogs();
       this.notifySyncSuccess();

@@ -189,8 +189,7 @@ export default function SyncScreen() {
       clearTimeout(timeoutId);
 
       if (response.ok || response.status === 200 || response.status === 201) {
-        // Purge local logs & attendance records
-        storageService.saveLogs([]);
+        // Purge local attendance records but keep home page history logs
         storageService.saveAttendanceRecords([]);
         sqliteService.purgeAuthLogs();
         const syncedLogs = logs.map(l => ({ ...l, status: 'synced' as const }));
@@ -205,7 +204,6 @@ export default function SyncScreen() {
       console.warn('Network sync failed, executing offline demo fallback:', err);
       // Simulated upload fallback for demonstration
       setTimeout(() => {
-        storageService.saveLogs([]);
         storageService.saveAttendanceRecords([]);
         sqliteService.purgeAuthLogs();
         const syncedLogs = logs.map(l => ({ ...l, status: 'synced' as const }));
