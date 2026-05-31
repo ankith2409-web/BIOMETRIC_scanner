@@ -202,12 +202,13 @@ export const storageService = {
     }
 
     // Check duplicate phone
-    if (user.phone && user.phone.trim() !== '') {
+    const userPhone = user.phone ? user.phone.trim() : '';
+    if (userPhone !== '') {
       const dupPhone = users.some(
-        u => u.id !== user.id && u.phone && u.phone.trim() === user.phone.trim()
+        u => u.id !== user.id && u.phone && u.phone.trim() === userPhone
       );
       if (dupPhone) {
-        console.warn(`User with phone "${user.phone}" already exists on Web. Skipping.`);
+        console.warn(`User with phone "${userPhone}" already exists on Web. Skipping.`);
         return;
       }
     }
