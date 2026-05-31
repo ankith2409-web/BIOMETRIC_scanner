@@ -71,6 +71,7 @@ export interface AttendanceRecord {
   checkIn?: string; // HH:MM AM/PM
   checkOut?: string; // HH:MM AM/PM
   note?: string; // Additional works context
+  status?: 'pending' | 'synced';
 }
 
 const USERS_KEY = 'facegate_users';
@@ -96,6 +97,8 @@ const MOCK_LOGS: AuthLog[] = [
 export const storageService = {
   // --- USERS ---
   getUsers(): User[] {
+    if (!isWeb) return sqliteService.getUsers();
+
     const data = localStore.getItem(USERS_KEY);
     if (!data) {
       // Seed initial data
@@ -110,10 +113,20 @@ export const storageService = {
   },
 
   saveUsers(users: User[]): void {
+    if (!isWeb) {
+      for (const u of users) {
+        sqliteService.saveUser(u);
+      }
+      return;
+    }
     localStore.setItem(USERS_KEY, JSON.stringify(users));
   },
 
   saveUser(user: User): void {
+    if (!isWeb) {
+      sqliteService.saveUser(user);
+      return;
+    }
     const users = this.getUsers();
     const existingIndex = users.findIndex(u => u.id === user.id);
     if (existingIndex > -1) {
@@ -125,17 +138,23 @@ export const storageService = {
   },
 
   getUserByPhone(phone: string): User | undefined {
+    if (!isWeb) return sqliteService.getUserByPhone(phone);
+
     const users = this.getUsers();
     return users.find(u => u.phone === phone);
   },
 
   getFaceEmbeddingByUserId(userId: string): FaceEmbedding | undefined {
+    if (!isWeb) return sqliteService.getFaceEmbeddingByUserId(userId);
+
     const embeddings = this.getFaceEmbeddings();
     return embeddings.find(e => e.userId === userId);
   },
 
   // --- EMBEDDINGS ---
   getFaceEmbeddings(): FaceEmbedding[] {
+    if (!isWeb) return sqliteService.getFaceEmbeddings();
+
     const data = localStore.getItem(EMBEDDINGS_KEY);
     if (!data) return [];
     try {
@@ -164,6 +183,10 @@ export const storageService = {
   },
 
   saveFaceEmbedding(embedding: FaceEmbedding): void {
+    if (!isWeb) {
+      sqliteService.saveFaceEmbedding(embedding);
+      return;
+    }
     const existing = this.getFaceEmbeddings();
     const next = existing.filter(e => e.userId !== embedding.userId);
     next.push(embedding);
@@ -188,6 +211,10 @@ export const storageService = {
    * Up to 8 extra vectors are stored per user (to cap storage use).
    */
   saveExtraFaceEmbedding(userId: string, vector: Float32Array): void {
+    if (!isWeb) {
+      sqliteService.saveExtraFaceEmbedding(userId, vector);
+      return;
+    }
     const data = localStore.getItem(EMBEDDINGS_KEY);
     if (!data) return;
     try {
@@ -224,6 +251,8 @@ export const storageService = {
    * all extra registration vectors for multi-embedding matching.
    */
   getFaceEmbeddingsAsGallery(): GalleryEntry[] {
+    if (!isWeb) return sqliteService.getFaceEmbeddingsAsGallery();
+
     const data = localStore.getItem(EMBEDDINGS_KEY);
     if (!data) return [];
     try {
@@ -263,6 +292,15 @@ export const storageService = {
     livenessPass: boolean;
     timestamp: string;
   }): void {
+    if (!isWeb) {
+      sqliteService.addAuthLog(log);
+      if (log.matched && log.userId) {
+        sqliteService.logAttendance(log.userId, log.name);
+      }
+      this.autoSyncIfOnline().catch(err => console.log('AutoSync error:', err));
+      return;
+    }
+
     const logs = this.getAuthLogs();
     const next = [
       {
@@ -388,6 +426,8 @@ export const storageService = {
     livenessPass: boolean;
     timestamp: string;
   }> {
+    if (!isWeb) return sqliteService.getAuthLogs();
+
     const data = localStore.getItem(AUTH_LOGS_KEY);
     if (!data) return [];
     try {
@@ -398,11 +438,19 @@ export const storageService = {
   },
 
   deleteUser(id: string): void {
+    if (!isWeb) {
+      sqliteService.deleteUser(id);
+      return;
+    }
     const users = this.getUsers().filter(u => u.id !== id);
     this.saveUsers(users);
   },
 
   deleteFaceEmbedding(userId: string): void {
+    if (!isWeb) {
+      sqliteService.deleteFaceEmbedding(userId);
+      return;
+    }
     const data = localStore.getItem(EMBEDDINGS_KEY);
     if (!data) return;
     try {
@@ -420,6 +468,8 @@ export const storageService = {
 
   // --- LOGS ---
   getLogs(): AuthLog[] {
+    if (!isWeb) return sqliteService.getLogs();
+
     const data = localStore.getItem(LOGS_KEY);
     if (!data) {
       this.saveLogs(MOCK_LOGS);
@@ -433,10 +483,20 @@ export const storageService = {
   },
 
   saveLogs(logs: AuthLog[]): void {
+    if (!isWeb) {
+      sqliteService.saveLogs(logs);
+      return;
+    }
     localStore.setItem(LOGS_KEY, JSON.stringify(logs));
   },
 
   addLog(log: Omit<AuthLog, 'id'>): void {
+    if (!isWeb) {
+      sqliteService.addLog(log);
+      this.autoSyncIfOnline().catch(err => console.log('AutoSync error:', err));
+      return;
+    }
+
     const logs = this.getLogs();
     let timestamp = log.timestamp;
     if (timestamp === 'Just now') {
@@ -501,6 +561,8 @@ export const storageService = {
 
   // --- ATTENDANCE ---
   getAttendanceRecords(userId?: string): AttendanceRecord[] {
+    if (!isWeb) return sqliteService.getAttendanceRecords(userId);
+
     const data = localStore.getItem(ATTENDANCE_KEY);
     let records: AttendanceRecord[] = [];
     if (!data) {
@@ -532,10 +594,6 @@ export const storageService = {
       });
       
       // Seed past records for a 10-day tracking window
-      // John Doe (id: '1'): present on 7 past days
-      // Sarah Chen (id: '2'): present on 8 past days
-      // Mike Ross (id: '3'): present on 6 past days
-      // Emma Wilson (id: '4'): present on 2 past days
       const userPresences = {
         '1': [1, 2, 3, 5, 6, 7, 8],
         '2': [1, 2, 3, 4, 6, 7, 8, 9],
@@ -578,7 +636,6 @@ export const storageService = {
     } else {
       try {
         records = JSON.parse(data);
-        // Force re-seed if the records are mock but lack the check-in-only or check-out-only styles
         const isAllMock = records.length > 0 && records.every(r => r.id.startsWith('att_mock_') || r.id.startsWith('att_today_') || r.id.startsWith('att_seed_'));
         const hasCheckInOnly = records.some(r => r.checkIn && !r.checkOut);
         const hasCheckOutOnly = records.some(r => !r.checkIn && r.checkOut);
@@ -598,10 +655,16 @@ export const storageService = {
   },
 
   saveAttendanceRecords(records: AttendanceRecord[]): void {
+    if (!isWeb) {
+      sqliteService.saveAttendanceRecords(records);
+      return;
+    }
     localStore.setItem(ATTENDANCE_KEY, JSON.stringify(records));
   },
 
   logAttendance(userId: string, userName: string): AttendanceRecord {
+    if (!isWeb) return sqliteService.logAttendance(userId, userName);
+
     const records = storageService.getAttendanceRecords();
     const todayStr = new Date().toISOString().split('T')[0];
     
@@ -670,7 +733,6 @@ export const storageService = {
       avgHoursStr = `${h}h ${m}m`;
     }
     
-    // Assume a 10-day tracking window
     const trackingPeriod = 10;
     const absent = Math.max(0, trackingPeriod - present);
     const percentage = Math.round((present / trackingPeriod) * 100);
@@ -685,6 +747,9 @@ export const storageService = {
 
   // --- RESET ---
   purgeAll(): void {
+    if (!isWeb) {
+      sqliteService.purgeAll();
+    }
     localStore.removeItem(USERS_KEY);
     localStore.removeItem(LOGS_KEY);
     localStore.removeItem(SETTINGS_KEY);

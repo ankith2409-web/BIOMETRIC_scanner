@@ -57,9 +57,14 @@ The processing core which handles all real-time video frame manipulation and cla
 
 ### 🧪 `services/` (Services & Storage)
 
-*   [`services/storageService.ts`](file:///c:/Users/akith/OneDrive/Desktop/nhai/services/storageService.ts): Main user and biometric database using localStorage with memory fallback. Stores enrolled users, logs, AWS sync variables, global locale settings, and burst-capture multi-embedding vectors. Implements cross-platform connectivity detection (`checkOnlineStatus()`) and a pub-sub subscription model (`onSyncSuccess`) to notify components when synchronization completes.
+*   [`services/storageService.ts`](file:///c:/Users/akith/OneDrive/Desktop/nhai/services/storageService.ts): Unified Storage abstraction. Redirects all database operations (users, embeddings, attendance, logs) to `sqliteService` on Native platforms (Android/iOS), while using `localStorage` (via `localStore`) as a fallback on Web. Manages global settings, session state, AWS cloud endpoints, and connection probing.
 *   [`services/i18n.ts`](file:///c:/Users/akith/OneDrive/Desktop/nhai/services/i18n.ts): Central translation dictionary and helper utility. Supports 10 Indian regional languages (English, Hindi, Marathi, Tamil, Telugu, Kannada, Bengali, Gujarati, Malayalam, and Punjabi) and registers dynamic reactive listeners for locale updates.
-*   [`services/sqliteService.ts`](file:///c:/Users/akith/OneDrive/Desktop/nhai/services/sqliteService.ts): SQLite integration helper.
+*   [`services/sqliteService.ts`](file:///c:/Users/akith/OneDrive/Desktop/nhai/services/sqliteService.ts): The primary local database engine on Native. Manages table creation, migration, seeding, and full CRUD query execution for:
+    *   `users`: User profile registry.
+    *   `embeddings`: Supports multi-embedding registration storage (1 base + up to 8 extra vectors).
+    *   `attendance`: Attendance records tagged with `pending` / `synced` flags for offline-first capabilities.
+    *   `logs`: Dashboard history logs.
+    *   `auth_logs`: Detailed telemetry security logs.
 *   [`services/faceApiService.ts`](file:///c:/Users/akith/OneDrive/Desktop/nhai/services/faceApiService.ts): REST wrapper for optional remote verification backend syncs.
 
 ### 🎨 `components/` (Modular UI Components)
