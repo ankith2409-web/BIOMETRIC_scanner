@@ -13,7 +13,7 @@ import { Colors, Typography, FontSizes, BorderRadius } from '../../constants/the
 import { storageService } from '../../services/storageService';
 import { sqliteService } from '../../services/sqliteService';
 
-type NetStatus = 'online' | 'offline' | 'syncing';
+type NetStatus = 'online' | 'offline' | 'syncing' | 'synced';
 
 export default function OfflineBanner() {
   // null = not yet determined (first probe hasn't returned yet)
@@ -23,31 +23,32 @@ export default function OfflineBanner() {
   const translateY = useSharedValue(-100);
   const iconPulse = useSharedValue(1);
 
+  // Subscribe to storageService sync callback
+  useEffect(() => {
+    const unsubscribe = storageService.onSyncSuccess(() => {
+      setStatus('synced');
+      setVisible(true);
+      setTimeout(() => {
+        setVisible(false);
+        setTimeout(() => {
+          setStatus('online');
+        }, 300);
+      }, 3000);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
   // Cross-platform network check
   useEffect(() => {
     // Use a ref-style variable so closure always reads the latest value.
     // Starts as null — means "unknown, haven't probed yet".
     let prevOnline: boolean | null = null;
 
-    const probe = async (): Promise<boolean> => {
-      try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 3000);
-        // Use Google's 204 endpoint — tiny, no-cors friendly, fast.
-        await fetch('https://clients3.google.com/generate_204', {
-          method: 'HEAD',
-          mode: 'no-cors',
-          signal: controller.signal,
-        });
-        clearTimeout(timeout);
-        return true;
-      } catch {
-        return false;
-      }
-    };
-
     const checkConnectivity = async () => {
-      const isOnline = await probe();
+      const isOnline = await storageService.checkOnlineStatus();
       handleStatusChange(isOnline);
     };
 
@@ -84,74 +85,22 @@ export default function OfflineBanner() {
     const triggerAutoSync = async () => {
       const localLogs = storageService.getLogs();
       const attendanceRecords = storageService.getAttendanceRecords();
-      const embeddings = storageService.getFaceEmbeddings();
 
       if (localLogs.length === 0 && attendanceRecords.length === 0) {
         setTimeout(() => {
           setVisible(false);
           setStatus('online');
-        }, 3000);
+        }, 1500);
         return;
       }
 
-      const settings = storageService.getSettings();
-      const endpoint = settings.awsEndpoint;
-
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 4000);
-
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            device: Platform.OS,
-            timestamp: new Date().toISOString(),
-            logs: localLogs,
-            attendance: attendanceRecords.map(r => ({
-              name: r.userName,
-              timeAttended: {
-                checkIn: r.checkIn || null,
-                checkOut: r.checkOut || null,
-                date: r.date
-              }
-            })),
-            embeddings: embeddings.map(e => ({
-              userId: e.userId,
-              name: e.name,
-              vector: Array.from(e.vector),
-              registeredAt: e.registeredAt,
-            })),
-          }),
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        if (response.ok || response.status === 200 || response.status === 201) {
-          storageService.saveLogs([]);
-          storageService.saveAttendanceRecords([]);
-          sqliteService.purgeAuthLogs();
-          console.log('[FaceGate][AutoSync] Successful upload & database purge.');
-        }
-      } catch (err) {
-        console.warn('[FaceGate][AutoSync] Auto-upload failed, applying demo fallback purge:', err);
-        storageService.saveLogs([]);
-        storageService.saveAttendanceRecords([]);
-        sqliteService.purgeAuthLogs();
-      }
-
-      setTimeout(() => {
-        setVisible(false);
-        setStatus('online');
-      }, 3500);
+      await storageService.autoSyncIfOnline();
     };
 
     // Run initial probe immediately
     checkConnectivity();
 
-    // On web, browser fires online/offline events quickly but we still
-    // validate with a real fetch so we don't trust the event alone.
+    // On web, browser fires online/offline events quickly
     if (Platform.OS === 'web' && typeof window !== 'undefined') {
       const goOnline = () => checkConnectivity();
       const goOffline = () => handleStatusChange(false);
@@ -201,12 +150,37 @@ export default function OfflineBanner() {
   if (status === null || (status === 'online' && !visible)) return null;
 
   const isOffline = status === 'offline';
-  const bannerBg = isOffline ? Colors.warningDim : 'rgba(0, 255, 136, 0.12)';
-  const bannerBorder = isOffline ? 'rgba(255, 184, 0, 0.18)' : 'rgba(0, 255, 136, 0.18)';
-  const bannerText = isOffline ? Colors.warning : Colors.success;
-  const bannerIcon = isOffline ? 'wifi-off' as const : 'wifi' as const;
+  const isSynced = status === 'synced';
+  const isSyncing = status === 'syncing';
+
+  const bannerBg = isOffline 
+    ? Colors.warningDim 
+    : isSynced 
+    ? Colors.successDim 
+    : 'rgba(0, 212, 255, 0.12)';
+
+  const bannerBorder = isOffline 
+    ? 'rgba(255, 184, 0, 0.18)' 
+    : isSynced 
+    ? Colors.borderSuccess 
+    : Colors.borderAccent;
+
+  const bannerText = isOffline 
+    ? Colors.warning 
+    : isSynced 
+    ? Colors.success 
+    : Colors.accent;
+
+  const bannerIcon = isOffline 
+    ? 'wifi-off' as const 
+    : isSynced 
+    ? 'check-circle' as const 
+    : 'wifi' as const;
+
   const message = isOffline 
     ? "Device is offline. Running in secure offline-mode."
+    : isSynced 
+    ? "Data successfully synced and purged to cloud!"
     : "Connection restored. Syncing & purging local database...";
 
   return (

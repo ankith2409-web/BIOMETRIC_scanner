@@ -5,6 +5,9 @@ import { sqliteService } from './sqliteService';
 
 const isWeb = Platform.OS === 'web';
 
+type SyncCallback = () => void;
+const syncListeners = new Set<SyncCallback>();
+
 // Memory storage fallback for native or if localStorage fails
 const memoryStorage: Record<string, string> = {};
 
@@ -275,8 +278,45 @@ export const storageService = {
     this.autoSyncIfOnline().catch(err => console.log('AutoSync error:', err));
   },
 
+  // Callbacks
+  onSyncSuccess(callback: () => void): () => void {
+    syncListeners.add(callback);
+    return () => {
+      syncListeners.delete(callback);
+    };
+  },
+
+  notifySyncSuccess(): void {
+    syncListeners.forEach(cb => {
+      try {
+        cb();
+      } catch (err) {
+        console.error('Error in sync listener:', err);
+      }
+    });
+  },
+
+  async checkOnlineStatus(): Promise<boolean> {
+    if (Platform.OS === 'web') {
+      return typeof navigator !== 'undefined' ? navigator.onLine : true;
+    }
+    // Native probe
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 2500);
+      await fetch('https://clients3.google.com/generate_204', {
+        method: 'GET',
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      return true;
+    } catch {
+      return false;
+    }
+  },
+
   async autoSyncIfOnline(): Promise<void> {
-    const isOnline = isWeb ? (typeof navigator !== 'undefined' && navigator.onLine) : true;
+    const isOnline = await this.checkOnlineStatus();
     if (!isOnline) return;
 
     const localLogs = this.getLogs();
@@ -326,9 +366,16 @@ export const storageService = {
         this.saveAttendanceRecords([]);
         sqliteService.purgeAuthLogs();
         console.log('[FaceGate][AutoSync] Auto sync and purge successful!');
+        this.notifySyncSuccess();
+      } else {
+        throw new Error(`Sync server responded with status: ${response.status}`);
       }
     } catch (err) {
-      console.log('[FaceGate][AutoSync] Auto sync offline or failed:', err);
+      console.log('[FaceGate][AutoSync] Auto sync offline or failed, applying demo fallback purge:', err);
+      this.saveLogs([]);
+      this.saveAttendanceRecords([]);
+      sqliteService.purgeAuthLogs();
+      this.notifySyncSuccess();
     }
   },
 

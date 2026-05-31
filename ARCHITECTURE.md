@@ -57,7 +57,7 @@ The processing core which handles all real-time video frame manipulation and cla
 
 ### 🧪 `services/` (Services & Storage)
 
-*   [`services/storageService.ts`](file:///c:/Users/akith/OneDrive/Desktop/nhai/services/storageService.ts): Main user and biometric database using localStorage with memory fallback. Stores enrolled users, logs, AWS sync variables, global locale settings, and burst-capture multi-embedding vectors.
+*   [`services/storageService.ts`](file:///c:/Users/akith/OneDrive/Desktop/nhai/services/storageService.ts): Main user and biometric database using localStorage with memory fallback. Stores enrolled users, logs, AWS sync variables, global locale settings, and burst-capture multi-embedding vectors. Implements cross-platform connectivity detection (`checkOnlineStatus()`) and a pub-sub subscription model (`onSyncSuccess`) to notify components when synchronization completes.
 *   [`services/i18n.ts`](file:///c:/Users/akith/OneDrive/Desktop/nhai/services/i18n.ts): Central translation dictionary and helper utility. Supports 10 Indian regional languages (English, Hindi, Marathi, Tamil, Telugu, Kannada, Bengali, Gujarati, Malayalam, and Punjabi) and registers dynamic reactive listeners for locale updates.
 *   [`services/sqliteService.ts`](file:///c:/Users/akith/OneDrive/Desktop/nhai/services/sqliteService.ts): SQLite integration helper.
 *   [`services/faceApiService.ts`](file:///c:/Users/akith/OneDrive/Desktop/nhai/services/faceApiService.ts): REST wrapper for optional remote verification backend syncs.
@@ -77,7 +77,8 @@ The processing core which handles all real-time video frame manipulation and cla
     *   [`components/ui/ConfirmDialog.tsx`](file:///c:/Users/akith/OneDrive/Desktop/nhai/components/ui/ConfirmDialog.tsx): Customizable popup panel.
     *   [`components/ui/GlassCard.tsx`](file:///c:/Users/akith/OneDrive/Desktop/nhai/components/ui/GlassCard.tsx): Translucent layout container.
     *   [`components/ui/NetworkIndicator.tsx`](file:///c:/Users/akith/OneDrive/Desktop/nhai/components/ui/NetworkIndicator.tsx): Visual status of backend server availability.
-*   `screens/` & `skeletons/`: Fallbacks.
+*   screens/ & skeletons/: Fallbacks.
+    *   [`components/screens/OfflineBanner.tsx`](file:///c:/Users/akith/OneDrive/Desktop/nhai/components/screens/OfflineBanner.tsx): Global connection banner that polls network status on Native and listens to browser connectivity on Web. Transitioning online triggers auto-sync, and registers for success notifications to display a premium green `'synced'` banner.
     *   [`components/screens/CameraPermission.tsx`](file:///c:/Users/akith/OneDrive/Desktop/nhai/components/screens/CameraPermission.tsx): Permission request screen.
     *   [`components/screens/ModelLoadError.tsx`](file:///c:/Users/akith/OneDrive/Desktop/nhai/components/screens/ModelLoadError.tsx): Recovery flow if models fail to load.
     *   [`components/skeletons/HomeSkeleton.tsx`](file:///c:/Users/akith/OneDrive/Desktop/nhai/components/skeletons/HomeSkeleton.tsx): Dashboard loading state placeholder.

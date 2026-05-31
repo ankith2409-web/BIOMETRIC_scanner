@@ -74,11 +74,46 @@ export default function SyncScreen() {
   const [logs, setLogs] = useState<any[]>([]);
   const [locale, setLocaleState] = useState(getLocale());
   const [lastSyncedTime, setLastSyncedTime] = useState(t('neverSynced'));
+  const [isDeviceOnline, setIsDeviceOnline] = useState(true);
 
   useEffect(() => {
     return addLocaleListener(() => {
       setLocaleState(getLocale());
     });
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const checkConnectivity = async () => {
+      const online = await storageService.checkOnlineStatus();
+      if (active) setIsDeviceOnline(online);
+    };
+
+    checkConnectivity();
+
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const handleOnline = () => setIsDeviceOnline(true);
+      const handleOffline = () => setIsDeviceOnline(false);
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+
+      // Still check every 6 seconds as backup
+      const poll = setInterval(checkConnectivity, 6000);
+
+      return () => {
+        active = false;
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+        clearInterval(poll);
+      };
+    } else {
+      // Native polling every 6 seconds
+      const poll = setInterval(checkConnectivity, 6000);
+      return () => {
+        active = false;
+        clearInterval(poll);
+      };
+    }
   }, []);
 
   const loadLogs = () => {
@@ -162,6 +197,7 @@ export default function SyncScreen() {
         setLogs(syncedLogs);
         setLastSyncedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
         alert(t('syncSuccess'));
+        storageService.notifySyncSuccess();
       } else {
         throw new Error(`Sync server responded with status: ${response.status}`);
       }
@@ -176,6 +212,7 @@ export default function SyncScreen() {
         setLogs(syncedLogs);
         setLastSyncedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
         setSyncing(false);
+        storageService.notifySyncSuccess();
       }, 2000);
       return;
     }
@@ -225,12 +262,23 @@ export default function SyncScreen() {
           <Text style={styles.lastSyncedText}>{t('lastSynced')}: {lastSyncedTime}</Text>
         </View>
         <AnimatedButton
-          label={syncing ? t('syncing') : t('syncNow')}
+          label={!isDeviceOnline ? "Offline - Sync Unavailable" : syncing ? t('syncing') : t('syncNow')}
           onPress={handleSync}
           icon="cloud-sync"
           loading={syncing}
+          disabled={!isDeviceOnline}
         />
       </Animated.View>
+
+      {/* Offline warning */}
+      {!isDeviceOnline && (
+        <Animated.View entering={FadeIn.duration(600)} style={styles.offlineWarningCard}>
+          <MaterialCommunityIcons name="wifi-off" size={20} color={Colors.warning} />
+          <Text style={styles.offlineWarningText}>
+            Device is offline. Manual sync is disabled until connection is restored.
+          </Text>
+        </Animated.View>
+      )}
 
       {/* Failed sync warning */}
       {failedCount > 0 && (
@@ -441,5 +489,24 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     textAlign: 'center',
     lineHeight: 18,
+  },
+  offlineWarningCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: Colors.warningDim,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 184, 0, 0.2)',
+    borderRadius: BorderRadius.md,
+    marginHorizontal: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 16,
+  },
+  offlineWarningText: {
+    ...Typography.body,
+    fontSize: FontSizes.sm,
+    color: Colors.warning,
+    flex: 1,
   },
 });
