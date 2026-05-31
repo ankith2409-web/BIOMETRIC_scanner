@@ -13,7 +13,7 @@ import { Colors, BorderRadius, Shadows, GlassStyles } from '../../constants/them
 interface GlassCardProps {
   children: React.ReactNode;
   style?: ViewStyle;
-  variant?: 'default' | 'accent' | 'success' | 'danger';
+  variant?: 'default' | 'accent' | 'success' | 'danger' | 'warning';
   padding?: number;
   borderRadius?: number;
   glow?: boolean;
@@ -32,6 +32,7 @@ export default function GlassCard({
     accent: Colors.borderAccent,
     success: Colors.borderSuccess,
     danger: Colors.borderDanger,
+    warning: Colors.borderWarning,
   }[variant];
 
   const shadowStyle = variant === 'accent' ? Shadows.cardGlow : Shadows.card;

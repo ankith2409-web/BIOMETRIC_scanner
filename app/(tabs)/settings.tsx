@@ -160,78 +160,8 @@ export default function SettingsScreen() {
           <Text style={styles.headerTitle}>{t('settings')}</Text>
         </Animated.View>
 
-        {/* Match Threshold */}
-        <Animated.View entering={FadeInUp.delay(100).duration(600)}>
-          <GlassCard style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <MaterialCommunityIcons name="tune-variant" size={20} color={Colors.accent} />
-              <Text style={styles.sectionTitle}>{t('recognition')}</Text>
-            </View>
-            <LinearGradient
-              colors={[Colors.accent, Colors.secondary, 'transparent']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.sectionUnderline}
-            />
-
-            <View style={styles.sliderContainer}>
-              <View style={styles.sliderHeader}>
-                <Text style={styles.sliderLabel}>{t('matchThreshold')}</Text>
-                <View style={styles.thresholdBadge}>
-                  <Text style={styles.thresholdValue}>{threshold.toFixed(2)}</Text>
-                </View>
-              </View>
-              <View style={styles.sliderRow}>
-                <Text style={styles.sliderMin}>0.75</Text>
-                <View style={styles.sliderWrapper}>
-                  <View style={styles.sliderTrack}>
-                    <View style={[styles.sliderFill, { width: `${((threshold - 0.75) / 0.20) * 100}%` }]} />
-                    <Pressable
-                      style={[styles.sliderThumb, { left: `${((threshold - 0.75) / 0.20) * 100}%` }]}
-                      onStartShouldSetResponder={() => true}
-                    />
-                  </View>
-                  {/* Using a transparent native slider overlay for touch handling */}
-                  <View style={styles.nativeSliderOverlay}>
-                    {/* @ts-ignore - Slider may not have types */}
-                    <TextInput
-                      style={{ display: 'none' }}
-                    />
-                  </View>
-                </View>
-                <Text style={styles.sliderMax}>0.95</Text>
-              </View>
-              <View style={styles.sliderLabels}>
-                <Text style={styles.sliderHint}>{t('strict')}</Text>
-                <Text style={styles.sliderHint}>{t('lenient')}</Text>
-              </View>
-              {/* Actual functional buttons to adjust */}
-              <View style={styles.adjustButtons}>
-                <Pressable
-                  style={styles.adjustBtn}
-                  onPress={() => adjustThreshold(-0.01)}
-                >
-                  <MaterialCommunityIcons name="minus" size={16} color={Colors.accent} />
-                </Pressable>
-                <Pressable
-                  style={styles.adjustBtn}
-                  onPress={() => adjustThreshold(0.01)}
-                >
-                  <MaterialCommunityIcons name="plus" size={16} color={Colors.accent} />
-                </Pressable>
-              </View>
-            </View>
-
-            <View style={styles.divider} />
-
-            <SettingRow icon="shield-check-outline" label={t('showConfidence')} description={t('showConfidenceDesc')}>
-              <Toggle value={showConfidence} onToggle={handleToggleConfidence} />
-            </SettingRow>
-          </GlassCard>
-        </Animated.View>
-
         {/* Region & Language selector */}
-        <Animated.View entering={FadeInUp.delay(150).duration(600)}>
+        <Animated.View entering={FadeInUp.delay(100).duration(600)}>
           <GlassCard style={styles.section}>
             <View style={styles.sectionHeader}>
               <MaterialCommunityIcons name="translate" size={20} color={Colors.accent} />
@@ -279,36 +209,19 @@ export default function SettingsScreen() {
           </GlassCard>
         </Animated.View>
 
-        {/* AWS Endpoint */}
-        <Animated.View entering={FadeInUp.delay(200).duration(600)}>
-          <GlassCard style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <MaterialCommunityIcons name="cloud-outline" size={20} color={Colors.accent} />
-              <Text style={styles.sectionTitle}>{t('cloudConfig')}</Text>
-            </View>
-
-            <Text style={styles.inputLabel}>{t('awsEndpoint')}</Text>
-            <View style={styles.inputContainer}>
-              <MaterialCommunityIcons name="link-variant" size={16} color={Colors.textTertiary} />
-              <TextInput
-                style={styles.textInput}
-                value={endpoint}
-                onChangeText={handleEndpointChange}
-                placeholderTextColor={Colors.textTertiary}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </View>
-          </GlassCard>
-        </Animated.View>
-
         {/* Account Management */}
-        <Animated.View entering={FadeInUp.delay(250).duration(600)}>
+        <Animated.View entering={FadeInUp.delay(150).duration(600)}>
           <GlassCard style={styles.section}>
             <View style={styles.sectionHeader}>
               <MaterialCommunityIcons name="account-cog-outline" size={20} color={Colors.accent} />
               <Text style={styles.sectionTitle}>{t('account')}</Text>
             </View>
+            <LinearGradient
+              colors={[Colors.accent, Colors.secondary, 'transparent']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.sectionUnderline}
+            />
 
             <View style={styles.aboutRow}>
               <Text style={styles.aboutLabel}>{t('loggedInAs')}</Text>
@@ -332,12 +245,107 @@ export default function SettingsScreen() {
           </GlassCard>
         </Animated.View>
 
-        {/* Data Management */}
-        <Animated.View entering={FadeInUp.delay(300).duration(600)}>
-          <GlassCard style={styles.section} variant="danger">
+        {/* Developer Settings (Gathers Recognition, Cloud, and Data Management) */}
+        <Animated.View entering={FadeInUp.delay(200).duration(600)}>
+          <GlassCard style={styles.section} variant="warning">
             <View style={styles.sectionHeader}>
-              <MaterialCommunityIcons name="database-alert" size={20} color={Colors.danger} />
-              <Text style={styles.sectionTitle}>{t('dataManagement')}</Text>
+              <MaterialCommunityIcons name="xml" size={20} color="#FF9933" />
+              <Text style={[styles.sectionTitle, { color: '#FF9933' }]}>Developer Settings</Text>
+            </View>
+            <LinearGradient
+              colors={['#FF9933', '#FF3B5C', 'transparent']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.sectionUnderline}
+            />
+
+            {/* Warning Message Card */}
+            <View style={styles.warningContainer}>
+              <MaterialCommunityIcons name="alert" size={18} color="#FF9933" style={{ marginTop: 2 }} />
+              <Text style={styles.warningText}>
+                WARNING: Modifying these advanced configurations can alter core biometric recognition criteria, affect attendance sync records, or wipe local databases. Adjust only under authorization.
+              </Text>
+            </View>
+
+            {/* Sub-section 1: Biometric Recognition */}
+            <View style={styles.devSubHeader}>
+              <MaterialCommunityIcons name="tune-variant" size={16} color={Colors.accent} />
+              <Text style={styles.devSubTitle}>{t('recognition')}</Text>
+            </View>
+            
+            <View style={styles.sliderContainer}>
+              <View style={styles.sliderHeader}>
+                <Text style={styles.sliderLabel}>{t('matchThreshold')}</Text>
+                <View style={styles.thresholdBadge}>
+                  <Text style={styles.thresholdValue}>{threshold.toFixed(2)}</Text>
+                </View>
+              </View>
+              <View style={styles.sliderRow}>
+                <Text style={styles.sliderMin}>0.75</Text>
+                <View style={styles.sliderWrapper}>
+                  <View style={styles.sliderTrack}>
+                    <View style={[styles.sliderFill, { width: `${((threshold - 0.75) / 0.20) * 100}%` }]} />
+                    <Pressable
+                      style={[styles.sliderThumb, { left: `${((threshold - 0.75) / 0.20) * 100}%` }]}
+                      onStartShouldSetResponder={() => true}
+                    />
+                  </View>
+                </View>
+                <Text style={styles.sliderMax}>0.95</Text>
+              </View>
+              <View style={styles.sliderLabels}>
+                <Text style={styles.sliderHint}>{t('strict')}</Text>
+                <Text style={styles.sliderHint}>{t('lenient')}</Text>
+              </View>
+              <View style={styles.adjustButtons}>
+                <Pressable
+                  style={styles.adjustBtn}
+                  onPress={() => adjustThreshold(-0.01)}
+                >
+                  <MaterialCommunityIcons name="minus" size={16} color={Colors.accent} />
+                </Pressable>
+                <Pressable
+                  style={styles.adjustBtn}
+                  onPress={() => adjustThreshold(0.01)}
+                >
+                  <MaterialCommunityIcons name="plus" size={16} color={Colors.accent} />
+                </Pressable>
+              </View>
+            </View>
+
+            <View style={styles.divider} />
+
+            <SettingRow icon="shield-check-outline" label={t('showConfidence')} description={t('showConfidenceDesc')}>
+              <Toggle value={showConfidence} onToggle={handleToggleConfidence} />
+            </SettingRow>
+
+            <View style={styles.divider} />
+
+            {/* Sub-section 2: Cloud Sync Configuration */}
+            <View style={styles.devSubHeader}>
+              <MaterialCommunityIcons name="cloud-outline" size={16} color={Colors.accent} />
+              <Text style={styles.devSubTitle}>{t('cloudConfig')}</Text>
+            </View>
+
+            <Text style={styles.inputLabel}>{t('awsEndpoint')}</Text>
+            <View style={styles.inputContainer}>
+              <MaterialCommunityIcons name="link-variant" size={16} color={Colors.textTertiary} />
+              <TextInput
+                style={styles.textInput}
+                value={endpoint}
+                onChangeText={handleEndpointChange}
+                placeholderTextColor={Colors.textTertiary}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+
+            <View style={styles.divider} />
+
+            {/* Sub-section 3: Local Data Management */}
+            <View style={styles.devSubHeader}>
+              <MaterialCommunityIcons name="database-alert" size={16} color={Colors.danger} />
+              <Text style={styles.devSubTitle}>{t('dataManagement')}</Text>
             </View>
 
             <Text style={styles.dangerDescription}>
@@ -356,12 +364,18 @@ export default function SettingsScreen() {
         </Animated.View>
 
         {/* About */}
-        <Animated.View entering={FadeInUp.delay(400).duration(600)}>
+        <Animated.View entering={FadeInUp.delay(250).duration(600)}>
           <GlassCard style={styles.section}>
             <View style={styles.sectionHeader}>
               <MaterialCommunityIcons name="information-outline" size={20} color={Colors.accent} />
               <Text style={styles.sectionTitle}>{t('about')}</Text>
             </View>
+            <LinearGradient
+              colors={[Colors.accent, Colors.secondary, 'transparent']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.sectionUnderline}
+            />
 
             <View style={styles.aboutRow}>
               <Text style={styles.aboutLabel}>{t('appVersion')}</Text>
@@ -415,6 +429,35 @@ const styles = StyleSheet.create({
   headerTitle: {
     ...Typography.heading,
     fontSize: FontSizes['2xl'],
+    color: Colors.textPrimary,
+  },
+  warningContainer: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255, 153, 51, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 153, 51, 0.2)',
+    borderRadius: BorderRadius.md,
+    padding: 12,
+    gap: 8,
+    marginBottom: 16,
+  },
+  warningText: {
+    flex: 1,
+    ...Typography.body,
+    fontSize: FontSizes.xs,
+    color: '#FF9933',
+    lineHeight: 18,
+  },
+  devSubHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 18,
+    marginBottom: 12,
+  },
+  devSubTitle: {
+    ...Typography.bodySemiBold,
+    fontSize: FontSizes.sm,
     color: Colors.textPrimary,
   },
   section: {

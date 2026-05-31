@@ -44,6 +44,7 @@ export const Colors = {
   borderAccent: 'rgba(0, 212, 255, 0.2)',
   borderSuccess: 'rgba(0, 255, 136, 0.2)',
   borderDanger: 'rgba(255, 59, 92, 0.2)',
+  borderWarning: 'rgba(255, 184, 0, 0.2)',
   borderSecondary: 'rgba(124, 92, 252, 0.2)',
   
   // Glassmorphism
