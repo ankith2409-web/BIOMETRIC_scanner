@@ -117,13 +117,24 @@ export default function SyncScreen() {
   }, []);
 
   const loadLogs = () => {
-    const realLogs = storageService.getLogs().map((log, idx) => ({
-      id: log.id,
-      user: log.name,
-      time: log.timestamp,
-      status: (idx === 1) ? 'failed' as const : 'pending' as const, // seed some failed logs for presentation
-    }));
-    setLogs(realLogs);
+    const realLogs = storageService.getLogs().map((log) => {
+      const status = log.status === 'success' ? ('pending' as const) : ('failed' as const);
+      return {
+        id: log.id,
+        user: log.name,
+        time: log.timestamp,
+        status,
+      };
+    });
+
+    // Sort logs so that 'pending' logs appear at the top of the list
+    const sortedLogs = [...realLogs].sort((a, b) => {
+      if (a.status === 'pending' && b.status !== 'pending') return -1;
+      if (a.status !== 'pending' && b.status === 'pending') return 1;
+      return 0;
+    });
+
+    setLogs(sortedLogs);
   };
 
   useEffect(() => {
@@ -192,7 +203,9 @@ export default function SyncScreen() {
         // Purge local attendance records but keep home page history logs
         storageService.saveAttendanceRecords([]);
         sqliteService.purgeAuthLogs();
-        const syncedLogs = logs.map(l => ({ ...l, status: 'synced' as const }));
+        const syncedLogs = logs.map(l => 
+          l.status === 'pending' ? { ...l, status: 'synced' as const } : l
+        );
         setLogs(syncedLogs);
         setLastSyncedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
         alert(t('syncSuccess'));
@@ -206,7 +219,9 @@ export default function SyncScreen() {
       setTimeout(() => {
         storageService.saveAttendanceRecords([]);
         sqliteService.purgeAuthLogs();
-        const syncedLogs = logs.map(l => ({ ...l, status: 'synced' as const }));
+        const syncedLogs = logs.map(l => 
+          l.status === 'pending' ? { ...l, status: 'synced' as const } : l
+        );
         setLogs(syncedLogs);
         setLastSyncedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
         setSyncing(false);
