@@ -267,22 +267,23 @@ export default function AuthenticateScreen() {
     }
   }, [authState]);
 
-  // Set timeout safety: if stuck for 12 seconds, fail
+  // Set timeout safety: if stuck for more than 5 seconds, fail
   useEffect(() => {
-    if (authState === 'scanning' || authState === 'liveness') {
+    if (authState === 'scanning' || authState === 'liveness' || authState === 'processing') {
       if (timeoutId.current) clearTimeout(timeoutId.current);
       timeoutId.current = setTimeout(() => {
-        if (authState === 'scanning' || authState === 'liveness') {
+        if (authState === 'scanning' || authState === 'liveness' || authState === 'processing') {
           storageService.addLog({
             name: 'Timeout / Unrecognized',
             timestamp: 'Just now',
             status: 'failure',
             confidence: 0,
           });
+          setFailureReason('Authentication timeout. Face recognition was not completed within 5 seconds.');
           setAuthState('failure');
           setShowResult('failure');
         }
-      }, 15000);
+      }, 5000);
     }
 
     return () => {
