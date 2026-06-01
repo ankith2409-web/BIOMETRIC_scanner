@@ -340,7 +340,7 @@ export default function LoginScreen() {
   // References
   const isProcessing = useRef(false);
   const authAttempts = useRef(0);
-  const maxAuthAttempts = 15;
+  const maxAuthAttempts = 45;
   const livenessPassedRef = useRef(false);
 
   // Load AI Models on mount
@@ -396,6 +396,7 @@ export default function LoginScreen() {
     isProcessing.current = true;
 
     try {
+      const threshold = storageService.getSettings().threshold;
       const userGallery = storageService
         .getFaceEmbeddingsAsGallery()
         .filter(e => e.userId === matchedUser.id);
@@ -415,7 +416,7 @@ export default function LoginScreen() {
         setShowLandmarks(false);
         setRealPoints(undefined);
         setFaceBox(null);
-        setQualityPrompt('Detecting face...');
+        setQualityPrompt('No face detected. Move closer to the camera.');
         return;
       }
 
@@ -440,18 +441,27 @@ export default function LoginScreen() {
 
       if (process.lightingScore !== undefined && process.lightingScore < 60) {
         const getLightingMessage = (issue: string | null) => {
-          if (issue === 'too_dark') return "Too dark, move to better light";
-          if (issue === 'too_bright') return "Too bright, avoid direct sunlight";
-          if (issue === 'shadow') return "Shadow detected, adjust position";
-          if (issue === 'backlight') return "Avoid light source behind you";
-          return "Poor lighting quality";
+          if (issue === 'too_dark') return "Too dark. Improve lighting conditions.";
+          if (issue === 'too_bright') return "Too bright. Improve lighting conditions.";
+          if (issue === 'shadow') return "Shadow detected. Improve lighting conditions.";
+          if (issue === 'backlight') return "Avoid backlight. Improve lighting conditions.";
+          return "Poor lighting. Improve lighting conditions.";
         };
         setQualityPrompt(getLightingMessage(process.lightingIssue ?? null));
         return;
       }
 
       if (process.qualityPass === false) {
-        setQualityPrompt(process.qualityMessage ?? 'Adjust your position and lighting.');
+        let msg = process.qualityMessage ?? 'Adjust your position and lighting.';
+        const lowerMsg = msg.toLowerCase();
+        if (lowerMsg.includes('closer') || lowerMsg.includes('fill')) {
+          msg = 'Move closer to the camera.';
+        } else if (lowerMsg.includes('center') || lowerMsg.includes('oval') || lowerMsg.includes('position')) {
+          msg = 'Align your face inside the guide area.';
+        } else if (lowerMsg.includes('straight') || lowerMsg.includes('angle') || lowerMsg.includes('tilt')) {
+          msg = 'Face the camera more directly.';
+        }
+        setQualityPrompt(msg);
         return;
       }
 
@@ -472,6 +482,18 @@ export default function LoginScreen() {
           isSpoof: !!auth.isSpoof,
           historySize: auth.historySize ?? 0,
         });
+
+        // Detailed telemetry console logging
+        console.log(`[FaceGate][Login][Telemetry] Attempt ${authAttempts.current + 1}/${maxAuthAttempts}
+          - Recognition Distance (bestDist): ${auth.bestDist?.toFixed(4)} (Threshold: ${threshold})
+          - Runner-up Distance: ${auth.runnerUpDist?.toFixed(4)}
+          - Confidence Gap: ${auth.gap?.toFixed(4)} (Margin: 0.08, Pass: ${auth.gapPass})
+          - Liveness Confidence: ${auth.livenessConfidence?.toFixed(4)} (Threshold: 0.65, Pass: ${auth.livenessPass})
+          - Image Quality Confidence: ${auth.qualityConfidence?.toFixed(4)} (Pass: ${process.qualityPass})
+          - Temporal Confidence: ${auth.temporalConfidence?.toFixed(4)} (Size: ${auth.historySize}/3)
+          - Frame Processing Time: ${process.timing?.total ?? 'N/A'}ms
+          - Rejection Reason: ${auth.isSpoof ? 'Photo Spoof detected' : (!auth.livenessPass ? 'Liveness failed (hold still)' : (auth.bestDist > threshold ? 'Face mismatch' : 'Gap/Temporal check failed'))}
+        `);
       }
 
       if (auth.matched) {
@@ -525,7 +547,17 @@ export default function LoginScreen() {
             status: 'failure',
             confidence: Math.round((auth.confidence ?? 0.35) * 100),
           });
-          setDebugText('Biometric validation limit exceeded. Access denied.');
+          
+          let failReason = 'Biometric validation limit exceeded. Access denied.';
+          if (auth.isSpoof) {
+            failReason = 'Anti-spoofing verification failed. Photo/replay detected.';
+          } else if (!auth.livenessPass) {
+            failReason = 'Liveness check failed. Hold still and look naturally at the camera.';
+          } else if (auth.bestDist > threshold) {
+            failReason = 'Identity could not be verified. Ensure your face is registered.';
+          }
+          setDebugText(failReason);
+          alert(failReason);
           setMode('phone-input');
           setMatchedUser(null);
         }

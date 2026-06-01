@@ -57,6 +57,7 @@ export const sqliteService = {
         timestamp TEXT NOT NULL,
         status TEXT NOT NULL,
         confidence INTEGER NOT NULL
+      );
     `);
 
     // Clean up duplicate names and phone numbers

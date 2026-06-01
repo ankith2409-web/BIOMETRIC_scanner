@@ -294,7 +294,24 @@ class FrameProcessorEngine {
       this.lastBox = null;
       this.temporalHistory = [];
       return {
-        auth: { matched: false, livenessPass: false, isSpoof: false, confidence: 0 },
+        auth: {
+          matched: false,
+          userId: undefined,
+          name: undefined,
+          confidence: 0,
+          livenessPass: false,
+          gapPass: false,
+          recogConfidence: 0,
+          livenessConfidence: 0,
+          qualityConfidence: 0,
+          temporalConfidence: 0,
+          gapConfidence: 0,
+          bestDist: 1.0,
+          runnerUpDist: 1.0,
+          gap: 0,
+          isSpoof: false,
+          historySize: 0,
+        },
         process: result,
       };
     }
@@ -390,6 +407,7 @@ class FrameProcessorEngine {
         name: finalMatched ? matchedName : undefined,
         confidence: finalConfidence,
         livenessPass,
+        gapPass,
         
         // Sub-scores
         recogConfidence,

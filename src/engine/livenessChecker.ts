@@ -96,10 +96,10 @@ export class LivenessChecker {
       
       const noseStdDev = Math.sqrt(varianceX + varianceY);
 
-      // Real human face has tiny micro-movements: StdDev is in [0.0004, 0.015]
+      // Real human face has tiny micro-movements: StdDev is in [0.0004, 0.025]
       if (noseStdDev < 0.0003) {
         isStaticPhoto = true; // No motion at all = static photo spoof
-      } else if (noseStdDev <= 0.015) {
+      } else if (noseStdDev <= 0.025) {
         microMovementScore = 1.0;
         stabilityScore = 1.0;
       } else {
@@ -144,7 +144,7 @@ export class LivenessChecker {
       livenessScore = 0.4 * blinkPart + 0.3 * microMovementScore + 0.3 * stabilityScore;
     }
 
-    const livenessPass = !isSpoof && livenessScore >= 0.70;
+    const livenessPass = !isSpoof && livenessScore >= 0.65;
 
     return {
       livenessScore,

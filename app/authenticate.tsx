@@ -99,6 +99,7 @@ function ResultOverlay({
   name,
   confidence,
   authTime,
+  reason,
   onRetry,
   onDone,
 }: {
@@ -106,6 +107,7 @@ function ResultOverlay({
   name: string;
   confidence: number;
   authTime?: string;
+  reason?: string;
   onRetry: () => void;
   onDone: () => void;
 }) {
@@ -155,7 +157,7 @@ function ResultOverlay({
 
       {!isSuccess && (
         <Animated.Text entering={FadeInUp.delay(400).duration(600)} style={styles.resultSubtitle}>
-          Face not identified or registered. Ensure shadows are minimal and lighting is clear.
+          {reason || 'Face not identified or registered. Ensure shadows are minimal and lighting is clear.'}
         </Animated.Text>
       )}
 
@@ -222,6 +224,8 @@ export default function AuthenticateScreen() {
   const timeoutId = useRef<ReturnType<typeof setTimeout> | null>(null);
   const matchAttempts = useRef(0);
   const challengePassedRef = useRef(false);
+  const [failureReason, setFailureReason] = useState<string>('');
+  const lastRejectionReason = useRef<string>('');
 
   // Load models on mount
   useEffect(() => {
@@ -297,7 +301,9 @@ export default function AuthenticateScreen() {
         setShowLandmarks(false);
         setRealPoints(undefined);
         setFaceBox(null);
-        setQualityPrompt('Detecting face...');
+        const msg = 'No face detected. Move closer to the camera.';
+        setQualityPrompt(msg);
+        lastRejectionReason.current = msg;
         stableCount.current = 0;
         return;
       }
@@ -322,19 +328,31 @@ export default function AuthenticateScreen() {
 
       if (process.lightingScore !== undefined && process.lightingScore < 60) {
         const getLightingMessage = (issue: string | null) => {
-          if (issue === 'too_dark') return "Too dark, move to better light";
-          if (issue === 'too_bright') return "Too bright, avoid direct sunlight";
-          if (issue === 'shadow') return "Shadow detected, adjust position";
-          if (issue === 'backlight') return "Avoid light source behind you";
-          return "Poor lighting quality";
+          if (issue === 'too_dark') return "Too dark. Improve lighting conditions.";
+          if (issue === 'too_bright') return "Too bright. Improve lighting conditions.";
+          if (issue === 'shadow') return "Shadow detected. Improve lighting conditions.";
+          if (issue === 'backlight') return "Avoid backlight. Improve lighting conditions.";
+          return "Poor lighting. Improve lighting conditions.";
         };
-        setQualityPrompt(getLightingMessage(process.lightingIssue ?? null));
+        const msg = getLightingMessage(process.lightingIssue ?? null);
+        setQualityPrompt(msg);
+        lastRejectionReason.current = msg;
         matchAttempts.current = 0;
         return;
       }
 
       if (process.qualityPass === false) {
-        setQualityPrompt(process.qualityMessage ?? 'Adjust your position and lighting.');
+        let msg = process.qualityMessage ?? 'Adjust your position and lighting.';
+        const lowerMsg = msg.toLowerCase();
+        if (lowerMsg.includes('closer') || lowerMsg.includes('fill')) {
+          msg = 'Move closer to the camera.';
+        } else if (lowerMsg.includes('center') || lowerMsg.includes('oval') || lowerMsg.includes('position')) {
+          msg = 'Align your face inside the guide area.';
+        } else if (lowerMsg.includes('straight') || lowerMsg.includes('angle') || lowerMsg.includes('tilt')) {
+          msg = 'Face the camera more directly.';
+        }
+        setQualityPrompt(msg);
+        lastRejectionReason.current = msg;
         return;
       }
 
@@ -358,6 +376,18 @@ export default function AuthenticateScreen() {
           isSpoof: !!auth.isSpoof,
           historySize: auth.historySize ?? 0,
         });
+
+        // Detailed telemetry console logging
+        console.log(`[FaceGate][Auth][Telemetry] Attempt ${matchAttempts.current + 1}/45
+          - Recognition Distance (bestDist): ${auth.bestDist?.toFixed(4)} (Threshold: 0.58)
+          - Runner-up Distance: ${auth.runnerUpDist?.toFixed(4)}
+          - Confidence Gap: ${auth.gap?.toFixed(4)} (Margin: 0.08, Pass: ${auth.gapPass})
+          - Liveness Confidence: ${auth.livenessConfidence?.toFixed(4)} (Threshold: 0.65, Pass: ${auth.livenessPass})
+          - Image Quality Confidence: ${auth.qualityConfidence?.toFixed(4)} (Pass: ${process.qualityPass})
+          - Temporal Confidence: ${auth.temporalConfidence?.toFixed(4)} (Size: ${auth.historySize}/3)
+          - Frame Processing Time: ${process.timing?.total ?? 'N/A'}ms
+          - Rejection Reason: ${auth.isSpoof ? 'Photo Spoof detected' : (!auth.livenessPass ? 'Liveness failed (hold still)' : (auth.bestDist > 0.58 ? 'Face mismatch' : 'Gap/Temporal check failed'))}
+        `);
       }
 
       // Attempt matching using high-security validation
@@ -409,8 +439,20 @@ export default function AuthenticateScreen() {
           matchAttempts.current = 0;
         } else {
           matchAttempts.current += 1;
-          // Give 12 frames of attempts to check before failing
-          if (matchAttempts.current >= 12) {
+
+          // Track detailed rejection reason for the final overlay
+          let rejectionMsg = 'Identity could not be verified. Ensure your face is registered.';
+          if (auth.isSpoof) {
+            rejectionMsg = 'Anti-spoofing verification failed. Photo/replay detected.';
+          } else if (!auth.livenessPass) {
+            rejectionMsg = 'Liveness verification failed. Hold still and look naturally at the camera.';
+          } else if (auth.bestDist > 0.58) {
+            rejectionMsg = 'Identity could not be verified. Face not recognized in local database.';
+          }
+          lastRejectionReason.current = rejectionMsg;
+
+          // Give 45 frames of attempts to check before failing
+          if (matchAttempts.current >= 45) {
             storageService.addLog({
               name: 'Unknown User',
               timestamp: 'Just now',
@@ -431,6 +473,7 @@ export default function AuthenticateScreen() {
               livenessPass: process.livenessPass ?? false,
               timestamp: new Date().toISOString(),
             });
+            setFailureReason(lastRejectionReason.current);
             setAuthState('failure');
             setShowResult('failure');
             matchAttempts.current = 0;
@@ -450,6 +493,8 @@ export default function AuthenticateScreen() {
     setMatchedName('');
     setMatchedConfidence(0);
     setAuthTime('');
+    setFailureReason('');
+    lastRejectionReason.current = '';
     setFaceDetected(false);
     setShowLandmarks(false);
     setRealPoints(undefined);
@@ -642,6 +687,7 @@ export default function AuthenticateScreen() {
           name={matchedName}
           confidence={matchedConfidence}
           authTime={authTime}
+          reason={failureReason}
           onRetry={handleRetry}
           onDone={() => router.back()}
         />
