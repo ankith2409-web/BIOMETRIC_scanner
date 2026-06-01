@@ -34,6 +34,7 @@ import { modelLoader } from '../src/engine/modelLoader';
 import { frameProcessorEngine } from '../src/engine/frameProcessor';
 import { EmbeddingValidator } from '../src/engine/embeddingValidator';
 import { FaceMeshModule } from '../src/engine/faceMeshModule';
+import { matchEmbedding } from '../src/engine/matcher';
 import { t, getLocale, setLocale, addLocaleListener } from '../services/i18n';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -391,6 +392,32 @@ export default function RegisterScreen() {
         return;
       }
 
+      const existingUsers = storageService.getUsers();
+      const existingUser = existingUsers.find(
+        u => u.name.toLowerCase().trim() === enrollName.toLowerCase().trim()
+      );
+      const threshold = storageService.getSettings().threshold;
+
+      if (existingUser) {
+        const userGallery = storageService
+          .getFaceEmbeddingsAsGallery()
+          .filter(e => e.userId === existingUser.id);
+        
+        if (userGallery.length > 0) {
+          const match = matchEmbedding(result.centroid, userGallery, threshold, 0.08);
+          if (!match.matched) {
+            alert("Identity verification failed. Scanned face does not match the registered profile for this name.");
+            setQualityPrompt('Identity mismatch! Scanned face is different from the registered user.');
+            setDebugText('Identity verification failed. Scanned face mismatch.');
+            
+            validatorRef.current.reset();
+            setHasEnteredName(false);
+            setCurrentStep(1);
+            return;
+          }
+        }
+      }
+
       const existing = storageService.getFaceEmbeddings();
       let nextNumId = 100;
       if (existing.length > 0) {
@@ -401,7 +428,7 @@ export default function RegisterScreen() {
         const maxId = Math.max(...ids, 99);
         nextNumId = maxId + 1;
       }
-      const userId = `user_${nextNumId}`;
+      const userId = existingUser ? existingUser.id : `user_${nextNumId}`;
       const registeredAt = new Date().toISOString();
       const vectorArray = Array.from(result.centroid);
       storageService.saveUser({
@@ -442,14 +469,6 @@ export default function RegisterScreen() {
 
   const handleStartScan = () => {
     if (enrollName.trim().length >= 2) {
-      const existingUsers = storageService.getUsers();
-      const dupName = existingUsers.some(
-        u => u.name.toLowerCase().trim() === enrollName.toLowerCase().trim()
-      );
-      if (dupName) {
-        alert("A user with this name already exists. Please choose a unique name.");
-        return;
-      }
       frameProcessorEngine.resetLiveness();
       setHasEnteredName(true);
     }

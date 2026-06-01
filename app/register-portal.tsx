@@ -38,7 +38,7 @@ import { modelLoader } from '../src/engine/modelLoader';
 import { frameProcessorEngine } from '../src/engine/frameProcessor';
 import { EmbeddingValidator } from '../src/engine/embeddingValidator';
 import { FaceMeshModule } from '../src/engine/faceMeshModule';
-import { euclideanDistance } from '../src/engine/matcher';
+import { euclideanDistance, matchEmbedding } from '../src/engine/matcher';
 import { t, getLocale, setLocale, addLocaleListener } from '../services/i18n';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -669,6 +669,34 @@ export default function RegisterPortalScreen() {
       return;
     }
 
+    const existingUsers = storageService.getUsers();
+    const existingUser = existingUsers.find(u => u.phone === enrollPhone);
+    const threshold = storageService.getSettings().threshold;
+
+    if (existingUser) {
+      const userGallery = storageService
+        .getFaceEmbeddingsAsGallery()
+        .filter(e => e.userId === existingUser.id);
+      
+      if (userGallery.length > 0) {
+        const match = matchEmbedding(embeddingCenter.current, userGallery, threshold, 0.08);
+        if (!match.matched) {
+          alert("Identity verification failed. Scanned face does not match the registered profile for this ID.");
+          setDebugText("Identity mismatch! Scanned face is different from the registered user.");
+          
+          embeddingCenter.current = null;
+          embeddingLeft.current = null;
+          embeddingRight.current = null;
+          embeddingSmile.current = null;
+          centerValidatorRef.current.reset();
+          consecutiveValidFrames.current = 0;
+          setPoseIsValid(false);
+          setStage('name-input');
+          return;
+        }
+      }
+    }
+
     try {
       setDebugText(t('regPromptStoringBiometrics'));
       const existing = storageService.getFaceEmbeddings();
@@ -681,7 +709,7 @@ export default function RegisterPortalScreen() {
         const maxId = Math.max(...ids, 99);
         nextNumId = maxId + 1;
       }
-      const userId = `user_${nextNumId}`;
+      const userId = existingUser ? existingUser.id : `user_${nextNumId}`;
       const registeredAt = new Date().toISOString();
 
       storageService.saveUser({
@@ -739,18 +767,10 @@ export default function RegisterPortalScreen() {
       const existingUsers = storageService.getUsers();
       
       const dupName = existingUsers.some(
-        u => u.name.toLowerCase().trim() === enrollName.toLowerCase().trim()
+        u => u.name.toLowerCase().trim() === enrollName.toLowerCase().trim() && u.phone !== enrollPhone
       );
       if (dupName) {
         alert("A user with this name already exists. Please choose a unique name.");
-        return;
-      }
-
-      const dupPhone = existingUsers.some(
-        u => u.phone && u.phone.trim() === enrollPhone.trim()
-      );
-      if (dupPhone) {
-        alert("A user with this mobile number already exists. Please enter a unique number.");
         return;
       }
 

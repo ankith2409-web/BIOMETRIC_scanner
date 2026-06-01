@@ -611,7 +611,7 @@ export const storageService = {
   // --- SETTINGS ---
   getSettings(): { threshold: number; showConfidence: boolean; awsEndpoint: string; locale: string } {
     const data = localStore.getItem(SETTINGS_KEY);
-    const defaults = { threshold: 0.80, showConfidence: true, awsEndpoint: 'https://api.facegate.io/sync', locale: 'en' };
+    const defaults = { threshold: 0.58, showConfidence: true, awsEndpoint: 'https://api.facegate.io/sync', locale: 'en' };
     if (!data) return defaults;
     try {
       return { ...defaults, ...JSON.parse(data) };

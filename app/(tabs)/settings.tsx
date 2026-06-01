@@ -80,7 +80,7 @@ const LANGUAGES = [
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const [threshold, setThreshold] = useState(0.80);
+  const [threshold, setThreshold] = useState(0.58);
   const [endpoint, setEndpoint] = useState('https://api.facegate.io/sync');
   const [showConfidence, setShowConfidence] = useState(true);
   const [showPurgeDialog, setShowPurgeDialog] = useState(false);
@@ -114,7 +114,7 @@ export default function SettingsScreen() {
 
   const adjustThreshold = (delta: number) => {
     setThreshold(prev => {
-      const newVal = Math.max(0.75, Math.min(0.95, +(prev + delta).toFixed(2)));
+      const newVal = Math.max(0.45, Math.min(0.75, +(prev + delta).toFixed(2)));
       handleSaveSettings(newVal, showConfidence, endpoint);
       return newVal;
     });
@@ -281,17 +281,17 @@ export default function SettingsScreen() {
                 </View>
               </View>
               <View style={styles.sliderRow}>
-                <Text style={styles.sliderMin}>0.75</Text>
+                <Text style={styles.sliderMin}>0.45</Text>
                 <View style={styles.sliderWrapper}>
                   <View style={styles.sliderTrack}>
-                    <View style={[styles.sliderFill, { width: `${((threshold - 0.75) / 0.20) * 100}%` }]} />
+                    <View style={[styles.sliderFill, { width: `${((threshold - 0.45) / 0.30) * 100}%` }]} />
                     <Pressable
-                      style={[styles.sliderThumb, { left: `${((threshold - 0.75) / 0.20) * 100}%` }]}
+                      style={[styles.sliderThumb, { left: `${((threshold - 0.45) / 0.30) * 100}%` }]}
                       onStartShouldSetResponder={() => true}
                     />
                   </View>
                 </View>
-                <Text style={styles.sliderMax}>0.95</Text>
+                <Text style={styles.sliderMax}>0.75</Text>
               </View>
               <View style={styles.sliderLabels}>
                 <Text style={styles.sliderHint}>{t('strict')}</Text>

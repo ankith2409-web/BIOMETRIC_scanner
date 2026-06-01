@@ -38,11 +38,66 @@ export class LivenessChecker {
   private closedFrames = 0;
   private blinkConfirmed = false;
 
+  // Web frame rate duplicate mitigation states
+  private consecutiveDuplicates = 0;
+  private readonly duplicateFreezeThreshold = 10;
+  private lastResult: { livenessScore: number; livenessPass: boolean; isSpoof: boolean; blinkDetected: boolean } | null = null;
+
   update(
     landmarks: LandmarkPoint[],
     ear: number,
     embedding?: Float32Array
   ): { livenessScore: number; livenessPass: boolean; isSpoof: boolean; blinkDetected: boolean } {
+    // 0. Detect identical landmark sets or identical embeddings across consecutive frames (camera lag / canvas freeze)
+    let isDuplicate = false;
+    if (this.landmarkHistory.length > 0) {
+      const lastLandmarks = this.landmarkHistory[this.landmarkHistory.length - 1];
+      let coordDiff = 0;
+      const compareLen = Math.min(landmarks.length, lastLandmarks.length);
+      for (let i = 0; i < compareLen; i++) {
+        coordDiff += Math.abs(landmarks[i].x - lastLandmarks[i].x) + Math.abs(landmarks[i].y - lastLandmarks[i].y);
+      }
+      
+      let embedDiff = 0;
+      if (embedding && this.embeddingHistory.length > 0) {
+        const lastEmbedding = this.embeddingHistory[this.embeddingHistory.length - 1];
+        const embLen = Math.min(embedding.length, lastEmbedding.length);
+        for (let i = 0; i < embLen; i++) {
+          embedDiff += Math.abs(embedding[i] - lastEmbedding[i]);
+        }
+      }
+
+      // If either landmarks or embedding are pixel-for-pixel/value-for-value identical, it is a lag duplicate
+      if (coordDiff === 0.0 || (embedding && embedDiff === 0.0)) {
+        isDuplicate = true;
+      }
+    }
+
+    if (isDuplicate) {
+      this.consecutiveDuplicates++;
+      if (this.consecutiveDuplicates >= this.duplicateFreezeThreshold) {
+        // Exceeded tolerance threshold; classify as a frozen frame spoof attack
+        const result = {
+          livenessScore: 0.0,
+          livenessPass: false,
+          isSpoof: true,
+          blinkDetected: false,
+        };
+        this.lastResult = result;
+        return result;
+      }
+      // Return previous result or default if none exists yet
+      return this.lastResult ?? {
+        livenessScore: 0.5,
+        livenessPass: false,
+        isSpoof: false,
+        blinkDetected: false,
+      };
+    }
+    
+    // Valid unique frame: reset consecutive duplicate counter
+    this.consecutiveDuplicates = 0;
+
     // 1. Maintain sliding histories
     this.earHistory.push(ear);
     if (this.earHistory.length > this.earWindowSize) this.earHistory.shift();
@@ -80,14 +135,15 @@ export class LivenessChecker {
     }
 
     // 3. Anti-Spoofing: Static Photo Detection
-    // Track standard deviation of core landmarks (nose tip = 1, left eye center = 33, right eye center = 263)
+    // Track standard deviation of core landmarks
+    // Nose tip: Index 30 for Web dlib 68-points, Index 1 for Native MediaPipe 468-points
     let isStaticPhoto = false;
     let microMovementScore = 0.0;
     let stabilityScore = 0.0;
 
     if (this.landmarkHistory.length >= 5) {
-      // Calculate variance of nose tip position
-      const noseHistory = this.landmarkHistory.map(lh => lh[1] ?? { x: 0.5, y: 0.5, z: 0 });
+      const noseIdx = landmarks.length === 68 ? 30 : 1;
+      const noseHistory = this.landmarkHistory.map(lh => lh[noseIdx] ?? { x: 0.5, y: 0.5, z: 0 });
       const avgX = noseHistory.reduce((sum, p) => sum + p.x, 0) / noseHistory.length;
       const avgY = noseHistory.reduce((sum, p) => sum + p.y, 0) / noseHistory.length;
       
@@ -146,12 +202,14 @@ export class LivenessChecker {
 
     const livenessPass = !isSpoof && livenessScore >= 0.65;
 
-    return {
+    const result = {
       livenessScore,
       livenessPass,
       isSpoof,
       blinkDetected: this.blinkConfirmed,
     };
+    this.lastResult = result;
+    return result;
   }
 
   reset(): void {
@@ -161,5 +219,7 @@ export class LivenessChecker {
     this.maxEAR = 0.0;
     this.closedFrames = 0;
     this.blinkConfirmed = false;
+    this.consecutiveDuplicates = 0;
+    this.lastResult = null;
   }
 }
