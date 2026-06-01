@@ -21,7 +21,7 @@ class FrameProcessorEngine {
   private readonly detectScoreThreshold = 0.40;
   private lastBox: DetectionBox | null = null;
   private temporalHistory: { userId: string; distance: number; name: string }[] = [];
-  private readonly HISTORY_DEPTH = 3;
+  private readonly HISTORY_DEPTH = 2;
 
   resetLiveness(): void {
     this.liveness.reset();

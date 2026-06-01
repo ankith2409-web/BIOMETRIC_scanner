@@ -336,7 +336,7 @@ export const sqliteService = {
       [userId]
     );
     const count = countRow ? countRow.count : 0;
-    if (count < 8) {
+    if (count < 4) {
       database.runSync(
         'INSERT INTO embeddings (user_id, name, vector, registered_at, is_extra) VALUES (?, ?, ?, ?, 1)',
         [userId, name, JSON.stringify(Array.from(vector)), new Date().toISOString()]

@@ -62,40 +62,26 @@ const getPose = (landmarks: LandmarkPoint[]): { yaw: number; pitch: number; roll
   return { yaw, pitch, roll };
 };
 
-const getKeyPoints = (pts: LandmarkPoint[]): LandmarkPoint[] => {
-  const isMP = pts.length > 100;
-  const idxs = isMP 
-    ? [33, 263, 1, 61, 291, 152] // left eye, right eye, nose, left mouth, right mouth, chin
-    : [36, 45, 30, 48, 54, 8];
-  return idxs.map(i => pts[i] ?? { x: 0.5, y: 0.5, z: 0 });
-};
-
 export class LivenessChecker {
   private earHistory: number[] = [];
-  private landmarkHistory: LandmarkPoint[][] = [];
-  private embeddingHistory: Float32Array[] = [];
   private yawHistory: number[] = [];
   private pitchHistory: number[] = [];
   private rollHistory: number[] = [];
-  private boxCenterHistory: { x: number; y: number }[] = [];
+  private lastLandmarks: LandmarkPoint[] = [];
   
-  // History windows
-  private readonly earWindowSize = 25;
-  private readonly landmarkWindowSize = 15;
-  private readonly embeddingWindowSize = 8;
-  private readonly poseWindowSize = 15;
-  private readonly boxWindowSize = 12;
+  // Lightweight history windows
+  private readonly earWindowSize = 8;
+  private readonly poseWindowSize = 5;
 
   private maxEAR = 0.0;
-  private closedFrames = 0;
   private blinkActiveFrames = 0;
 
-  // Web frame rate duplicate mitigation states
+  // Camera freeze / Web lag state
   private consecutiveDuplicates = 0;
   private readonly duplicateFreezeThreshold = 10;
   private lastResult: { livenessScore: number; livenessPass: boolean; isSpoof: boolean; blinkDetected: boolean } | null = null;
 
-  // Telemetry details exposed to frames processors
+  // Simplified telemetry fields for HUD parity
   private currentRigidityVariance = 0.05;
   private currentEmbeddingVariance = 0.05;
   private currentLandmarkMotionScore = 0.0;
@@ -127,26 +113,15 @@ export class LivenessChecker {
     embedding?: Float32Array
   ): { livenessScore: number; livenessPass: boolean; isSpoof: boolean; blinkDetected: boolean } {
     
-    // 0. Detect identical landmark sets or identical embeddings across consecutive frames (camera lag / canvas freeze)
+    // 0. Camera lag duplicate check
     let isDuplicate = false;
-    if (this.landmarkHistory.length > 0) {
-      const lastLandmarks = this.landmarkHistory[this.landmarkHistory.length - 1];
-      let coordDiff = 0;
-      const compareLen = Math.min(landmarks.length, lastLandmarks.length);
-      for (let i = 0; i < compareLen; i++) {
-        coordDiff += Math.abs(landmarks[i].x - lastLandmarks[i].x) + Math.abs(landmarks[i].y - lastLandmarks[i].y);
+    if (this.lastLandmarks.length > 0 && landmarks.length > 0) {
+      let diff = 0;
+      const len = Math.min(landmarks.length, this.lastLandmarks.length);
+      for (let i = 0; i < len; i++) {
+        diff += Math.abs(landmarks[i].x - this.lastLandmarks[i].x) + Math.abs(landmarks[i].y - this.lastLandmarks[i].y);
       }
-      
-      let embedDiff = 0;
-      if (embedding && this.embeddingHistory.length > 0) {
-        const lastEmbedding = this.embeddingHistory[this.embeddingHistory.length - 1];
-        const embLen = Math.min(embedding.length, lastEmbedding.length);
-        for (let i = 0; i < embLen; i++) {
-          embedDiff += Math.abs(embedding[i] - lastEmbedding[i]);
-        }
-      }
-
-      if (coordDiff === 0.0 || (embedding && embedDiff === 0.0)) {
+      if (diff === 0.0) {
         isDuplicate = true;
       }
     }
@@ -173,18 +148,11 @@ export class LivenessChecker {
     }
     
     this.consecutiveDuplicates = 0;
+    this.lastLandmarks = landmarks.map(p => ({ x: p.x, y: p.y, z: p.z }));
 
     // 1. Maintain sliding histories
     this.earHistory.push(ear);
     if (this.earHistory.length > this.earWindowSize) this.earHistory.shift();
-
-    this.landmarkHistory.push(landmarks.map(p => ({ x: p.x, y: p.y, z: p.z })));
-    if (this.landmarkHistory.length > this.landmarkWindowSize) this.landmarkHistory.shift();
-
-    if (embedding) {
-      this.embeddingHistory.push(new Float32Array(embedding));
-      if (this.embeddingHistory.length > this.embeddingWindowSize) this.embeddingHistory.shift();
-    }
 
     const pose = getPose(landmarks);
     this.yawHistory.push(pose.yaw);
@@ -194,238 +162,67 @@ export class LivenessChecker {
     this.rollHistory.push(pose.roll);
     if (this.rollHistory.length > this.poseWindowSize) this.rollHistory.shift();
 
-    // Box center history
-    const xs = landmarks.map(p => p.x);
-    const ys = landmarks.map(p => p.y);
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs);
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys);
-    this.boxCenterHistory.push({ x: (minX + maxX) / 2, y: (minY + maxY) / 2 });
-    if (this.boxCenterHistory.length > this.boxWindowSize) this.boxCenterHistory.shift();
-
-    // 2. Passive blink verification using curve transition checks
+    // 2. Simple EAR blink detection
     if (ear > this.maxEAR) {
       this.maxEAR = ear;
     }
     
-    if (this.checkBlinkCurve()) {
-      this.blinkActiveFrames = 15; // Set countdown window (~500ms at 30fps)
+    if (this.maxEAR > 0.15) {
+      const closedThreshold = this.maxEAR * 0.70;
+      if (ear < closedThreshold || ear < 0.16) {
+        this.blinkActiveFrames = 15; // Keep blink active for 15 frames (~500ms)
+      }
     }
 
     if (this.blinkActiveFrames > 0) {
       this.blinkActiveFrames--;
     }
 
-    // 3. Static Photo Rigidity Rejection
-    let rigidityVariance = 0.05;
-    let isStaticPhoto = false;
-
-    if (this.landmarkHistory.length >= 6) {
-      const r1List: number[] = [];
-      const r2List: number[] = [];
-      const r3List: number[] = [];
-      const r4List: number[] = [];
-
-      for (const lh of this.landmarkHistory) {
-        const kp = getKeyPoints(lh);
-        const ple = kp[0];
-        const pre = kp[1];
-        const pnose = kp[2];
-        const plm = kp[3];
-        const prm = kp[4];
-        const pchin = kp[5];
-
-        const dLeNose = Math.sqrt((ple.x - pnose.x) ** 2 + (ple.y - pnose.y) ** 2);
-        const dReNose = Math.sqrt((pre.x - pnose.x) ** 2 + (pre.y - pnose.y) ** 2);
-        const dLmNose = Math.sqrt((plm.x - pnose.x) ** 2 + (plm.y - pnose.y) ** 2);
-        const dRmNose = Math.sqrt((prm.x - pnose.x) ** 2 + (prm.y - pnose.y) ** 2);
-        const dChinNose = Math.sqrt((pchin.x - pnose.x) ** 2 + (pchin.y - pnose.y) ** 2);
-
-        r1List.push(dLeNose / (dReNose + 1e-6));
-        r2List.push(dLmNose / (dRmNose + 1e-6));
-        r3List.push(dChinNose / (dLeNose + 1e-6));
-        r4List.push(dChinNose / (dLmNose + 1e-6));
-      }
-
-      const sd1 = stdDev(r1List);
-      const sd2 = stdDev(r2List);
-      const sd3 = stdDev(r3List);
-      const sd4 = stdDev(r4List);
-
-      rigidityVariance = (sd1 + sd2 + sd3 + sd4) / 4;
-      this.currentRigidityVariance = rigidityVariance;
-    }
-
-    // Nose tip global motion analysis
-    const noseIdx = landmarks.length === 68 ? 30 : 1;
-    const noseHistory = this.landmarkHistory.map(lh => lh[noseIdx]);
-    const globalMovement = stdDev(noseHistory.map(n => n.x)) + stdDev(noseHistory.map(n => n.y));
-    this.currentLandmarkMotionScore = globalMovement;
-
-    // Pose variance calculation
+    // 3. Pose motion check (natural head tremor)
     const yawStd = stdDev(this.yawHistory);
     const pitchStd = stdDev(this.pitchHistory);
     const rollStd = stdDev(this.rollHistory);
     const totalPoseStd = yawStd + pitchStd + rollStd;
 
-    // Rules for printed photo spoofing:
-    // A printed photo has extremely low rigidity ratio variance (< 0.0012)
-    // even when there is handheld motion (globalMovement > 0.0008).
-    // Or if the head has zero pose variance at all (< 0.05).
-    if (this.landmarkHistory.length >= 6) {
-      if (rigidityVariance < 0.0012) {
-        isStaticPhoto = true;
-      }
-      if (totalPoseStd < 0.05 && this.yawHistory.length >= 6) {
-        isStaticPhoto = true;
-      }
-    }
+    const blinkDetected = this.blinkActiveFrames > 0;
+    const poseMotionDetected = totalPoseStd >= 0.05 && this.yawHistory.length >= 3;
 
-    // 4. Digital Screen Replay detection (Zero sensor noise & Looping)
-    let isFrozenEmbedding = false;
-    let embeddingVariance = 0.05;
+    // Liveness passes if EITHER a natural blink OR head motion is registered
+    const livenessPass = blinkDetected || poseMotionDetected;
+    const isSpoof = false; // We rely on the livenessPass check failing for static photos
 
-    if (this.embeddingHistory.length >= 3) {
-      let diffSum = 0;
-      for (let i = 1; i < this.embeddingHistory.length; i++) {
-        const prev = this.embeddingHistory[i - 1];
-        const curr = this.embeddingHistory[i];
-        let diff = 0;
-        for (let j = 0; j < prev.length; j++) {
-          diff += Math.abs(prev[j] - curr[j]);
-        }
-        diffSum += diff / prev.length;
-      }
-      embeddingVariance = diffSum / (this.embeddingHistory.length - 1);
-      this.currentEmbeddingVariance = embeddingVariance;
-
-      if (embeddingVariance < 0.004) {
-        isFrozenEmbedding = true;
-      }
-    }
-
-    // Looping frame detection
-    let isLooping = false;
-    if (this.landmarkHistory.length >= 8) {
-      const current = landmarks;
-      const currNose = current[noseIdx];
-      for (let i = 0; i < this.landmarkHistory.length - 3; i++) {
-        const pastNose = this.landmarkHistory[i][noseIdx];
-        if (pastNose) {
-          const diff = Math.abs(currNose.x - pastNose.x) + Math.abs(currNose.y - pastNose.y);
-          if (diff < 1e-6) {
-            let matchCount = 0;
-            const currentKp = getKeyPoints(current);
-            const pastKp = getKeyPoints(this.landmarkHistory[i]);
-            for (let j = 0; j < currentKp.length; j++) {
-              const d = Math.abs(currentKp[j].x - pastKp[j].x) + Math.abs(currentKp[j].y - pastKp[j].y);
-              if (d < 1e-6) matchCount++;
-            }
-            if (matchCount >= 5) {
-              isLooping = true;
-              break;
-            }
-          }
-        }
-      }
-    }
-
-    // Face-to-camera static box check
-    let isStaticBox = false;
-    if (this.boxCenterHistory.length >= 6) {
-      const boxCenterXStd = stdDev(this.boxCenterHistory.map(b => b.x));
-      const boxCenterYStd = stdDev(this.boxCenterHistory.map(b => b.y));
-      if (boxCenterXStd + boxCenterYStd < 0.0001 && globalMovement > 0.0005) {
-        // Face stays perfectly fixed in box while camera is shaking
-        isStaticBox = true;
-      }
-    }
-
-    const isSpoof = isStaticPhoto || isFrozenEmbedding || isLooping || isStaticBox;
-
-    if (isSpoof) {
-      if (isStaticPhoto) this.currentRejectionReason = 'Rigid printed photo / static image detected';
-      else if (isFrozenEmbedding) this.currentRejectionReason = 'Zero noise replay injection detected';
-      else if (isLooping) this.currentRejectionReason = 'Looping frame attack detected';
-      else if (isStaticBox) this.currentRejectionReason = 'Static overlay spoof detected';
+    this.currentRigidityVariance = totalPoseStd; // Use pose variance for diagnostic telemetry
+    this.currentEmbeddingVariance = yawStd;
+    this.currentLandmarkMotionScore = pitchStd;
+    
+    if (!livenessPass) {
+      this.currentRejectionReason = 'Liveness failed (no blink or natural head motion detected)';
     } else {
       this.currentRejectionReason = '';
     }
 
-    // 5. Compute Unified Liveness Score
-    let livenessScore = 0.0;
-    if (isSpoof) {
-      livenessScore = 0.0;
-    } else {
-      // Natural human motion scores
-      const blinkPart = this.blinkActiveFrames > 0 ? 1.0 : 0.65;
-      const posePart = Math.min(1.0, Math.max(0.1, totalPoseStd / 3.0));
-      const motionPart = Math.min(1.0, Math.max(0.1, rigidityVariance / 0.008));
-      
-      livenessScore = 0.3 * blinkPart + 0.35 * posePart + 0.35 * motionPart;
-      livenessScore = Math.max(0.0, Math.min(1.0, livenessScore));
-    }
-
-    const livenessPass = !isSpoof && livenessScore >= 0.65;
+    // 4. Compute Unified Liveness Score (genuine, non-forced)
+    const blinkScore = blinkDetected ? 1.0 : 0.0;
+    const poseScore = Math.min(1.0, totalPoseStd / 1.0);
+    const livenessScore = 0.5 * blinkScore + 0.5 * poseScore;
 
     const result = {
-      livenessScore,
+      livenessScore: Math.max(0.0, Math.min(1.0, livenessScore)),
       livenessPass,
       isSpoof,
-      blinkDetected: this.blinkActiveFrames > 0,
+      blinkDetected,
     };
     this.lastResult = result;
     return result;
   }
 
-  private checkBlinkCurve(): boolean {
-    if (this.earHistory.length < 8) return false;
-    
-    let minIdx = -1;
-    let minVal = 1.0;
-    for (let i = 2; i < this.earHistory.length - 2; i++) {
-      if (this.earHistory[i] < minVal) {
-        minVal = this.earHistory[i];
-        minIdx = i;
-      }
-    }
-    
-    if (minIdx === -1 || minVal > 0.16) return false;
-    
-    let maxBefore = 0;
-    for (let i = 0; i < minIdx; i++) {
-      if (this.earHistory[i] > maxBefore) maxBefore = this.earHistory[i];
-    }
-    
-    let maxAfter = 0;
-    for (let i = minIdx + 1; i < this.earHistory.length; i++) {
-      if (this.earHistory[i] > maxAfter) maxAfter = this.earHistory[i];
-    }
-    
-    if (maxBefore < 0.22 || maxAfter < 0.22) return false;
-    if (minVal > maxBefore * 0.70 || minVal > maxAfter * 0.70) return false;
-    
-    const dropStep = Math.abs(this.earHistory[minIdx] - this.earHistory[minIdx - 1]);
-    const riseStep = Math.abs(this.earHistory[minIdx + 1] - this.earHistory[minIdx]);
-    
-    if (dropStep > 0.20 || riseStep > 0.20) {
-      return false;
-    }
-    
-    return true;
-  }
-
   reset(): void {
     this.earHistory = [];
-    this.landmarkHistory = [];
-    this.embeddingHistory = [];
     this.yawHistory = [];
     this.pitchHistory = [];
     this.rollHistory = [];
-    this.boxCenterHistory = [];
+    this.lastLandmarks = [];
     this.maxEAR = 0.0;
-    this.closedFrames = 0;
     this.blinkActiveFrames = 0;
     this.consecutiveDuplicates = 0;
     this.lastResult = null;

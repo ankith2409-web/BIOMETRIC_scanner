@@ -321,7 +321,7 @@ export const storageService = {
       });
       if (idx === -1) return;
       const extras = parsed[idx].extra_embeddings ?? parsed[idx].extraVectors ?? [];
-      if (extras.length < 8) {
+      if (extras.length < 4) {
         extras.push(Array.from(vector));
         parsed[idx].extra_embeddings = extras;
         localStore.setItem(EMBEDDINGS_KEY, JSON.stringify(parsed));

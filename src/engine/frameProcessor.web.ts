@@ -14,7 +14,7 @@ class FrameProcessorEngineWeb {
 
   private lastBox: DetectionBox | null = null;
   private temporalHistory: { userId: string; distance: number; name: string }[] = [];
-  private readonly HISTORY_DEPTH = 3;
+  private readonly HISTORY_DEPTH = 2;
 
   resetLiveness(): void {
     this.liveness.reset();
@@ -293,8 +293,9 @@ class FrameProcessorEngineWeb {
           detection = await this.detectWithTiny(faceapi, canvas, Math.min(validSize, 416), log);
         }
       } else {
-        // Auth: Tiny only for speed
-        detection = await this.detectWithTiny(faceapi, canvas, validSize, log);
+        // Auth: Tiny only for speed, capped at 160 or 224
+        const webInputSize = Math.max(128, Math.min(validSize, 224));
+        detection = await this.detectWithTiny(faceapi, canvas, webInputSize, log);
       }
 
       timing.detect = Date.now() - t1;

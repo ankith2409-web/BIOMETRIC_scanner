@@ -339,12 +339,12 @@ export default function RegisterScreen() {
       }
 
       if (savedUserId.current) {
-        if (extraCaptureCount.current < 3) {
+        if (extraCaptureCount.current < 4) {
           storageService.saveExtraFaceEmbedding(savedUserId.current, process.embedding);
           extraCaptureCount.current += 1;
           console.log('[FaceGate][Register] Extra embedding', extraCaptureCount.current, 'saved');
         }
-        if (extraCaptureCount.current >= 3) {
+        if (extraCaptureCount.current >= 4) {
           setCurrentStep(4);
         }
         return;
