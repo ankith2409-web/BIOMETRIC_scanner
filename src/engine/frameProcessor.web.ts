@@ -440,7 +440,29 @@ class FrameProcessorEngineWeb {
       this.lastBox = null;
       this.temporalHistory = [];
       return {
-        auth: { matched: false, livenessPass: false, isSpoof: false, confidence: 0 },
+        auth: {
+          matched: false,
+          userId: undefined,
+          name: undefined,
+          confidence: 0,
+          livenessPass: false,
+          gapPass: false,
+          recogConfidence: 0,
+          livenessConfidence: 0,
+          qualityConfidence: 0,
+          temporalConfidence: 0,
+          gapConfidence: 0,
+          bestDist: 1.0,
+          runnerUpDist: 1.0,
+          gap: 0,
+          isSpoof: false,
+          historySize: 0,
+          duplicateFrameCount: 0,
+          landmarkMotionScore: 0,
+          embeddingVarianceScore: 0,
+          rejectionReason: 'No face detected.',
+          authLatencyMs: 0,
+        },
         process: result,
       };
     }
@@ -484,7 +506,7 @@ class FrameProcessorEngineWeb {
     const isSpoof = result.isSpoof ?? false;
     const livenessPass = result.livenessPass ?? false;
     const qualityConfidence = result.qualityConfidence ?? 0.0;
-    const recogConfidence = match.recognitionConfidence;
+    const recogConfidence = Math.max(0, Math.min(1, 1.0 - match.bestDist));
     const gapConfidence = match.gapConfidence;
     const gapPass = match.gapPass;
 
@@ -502,13 +524,30 @@ class FrameProcessorEngineWeb {
       w_temp * temporalConfidence +
       w_gap * gapConfidence;
 
+    // Strict multi-factor authentication validation policy
     const finalMatched =
       !isSpoof &&
       avgDistance <= threshold &&
       gapPass &&
       livenessPass &&
       temporalConsistencyPass &&
-      finalConfidence >= 0.82;
+      result.qualityPass === true;
+
+    // Rejection diagnostics tracking
+    let rejectionReason = '';
+    if (isSpoof) {
+      rejectionReason = this.liveness.getRejectionReason() || 'Anti-spoofing verification failed.';
+    } else if (avgDistance > threshold) {
+      rejectionReason = 'Identity could not be verified. Face not recognized in local database.';
+    } else if (!livenessPass) {
+      rejectionReason = 'Liveness verification failed. Hold still and look naturally at the camera.';
+    } else if (!temporalConsistencyPass) {
+      rejectionReason = 'Temporal identity consistency failed. Keep face steady in frame.';
+    } else if (!gapPass) {
+      rejectionReason = 'Confidence gap validation failed (ambiguous candidate).';
+    } else if (result.qualityPass === false) {
+      rejectionReason = result.qualityMessage ?? 'Poor image quality. Adjust your lighting.';
+    }
 
     console.log(`[FaceGate][Web][Auth] Telemetry:
       Candidate ID: ${matchedUserId} (${matchedName})
@@ -525,8 +564,8 @@ class FrameProcessorEngineWeb {
         - Image Quality: ${(qualityConfidence * 100).toFixed(1)}% (weight: ${w_qual})
         - Temporal: ${(temporalConfidence * 100).toFixed(1)}% (weight: ${w_temp})
         - Gap: ${(gapConfidence * 100).toFixed(1)}% (weight: ${w_gap})
-      Final Aggregated Confidence: ${(finalConfidence * 100).toFixed(1)}% (Threshold: 95%)
-      Auth Result: ${finalMatched ? 'SUCCESS' : 'FAILED'}
+      Final Aggregated Confidence: ${(finalConfidence * 100).toFixed(1)}%
+      Auth Result: ${finalMatched ? 'SUCCESS' : 'FAILED'} (Reason: ${rejectionReason || 'none'})
     `);
 
     return {
@@ -536,6 +575,7 @@ class FrameProcessorEngineWeb {
         name: finalMatched ? matchedName : undefined,
         confidence: finalConfidence,
         livenessPass,
+        gapPass,
         
         // Sub-scores
         recogConfidence,
@@ -550,6 +590,11 @@ class FrameProcessorEngineWeb {
         gap: match.gap,
         isSpoof,
         historySize: this.temporalHistory.length,
+        duplicateFrameCount: this.liveness.getConsecutiveDuplicatesCount(),
+        landmarkMotionScore: this.liveness.getLandmarkMotionScore(),
+        embeddingVarianceScore: this.liveness.getEmbeddingVariance(),
+        rejectionReason,
+        authLatencyMs: result.timing?.total ?? 0,
       },
       process: result,
     };

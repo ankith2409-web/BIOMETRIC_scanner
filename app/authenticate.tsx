@@ -214,6 +214,11 @@ export default function AuthenticateScreen() {
     gap: number;
     isSpoof: boolean;
     historySize: number;
+    duplicateFrameCount: number;
+    landmarkMotionScore: number;
+    embeddingVarianceScore: number;
+    rejectionReason: string;
+    authLatencyMs: number;
   } | null>(null);
 
   const scanPulse = useSharedValue(1);
@@ -375,6 +380,11 @@ export default function AuthenticateScreen() {
           gap: auth.gap ?? 0,
           isSpoof: !!auth.isSpoof,
           historySize: auth.historySize ?? 0,
+          duplicateFrameCount: auth.duplicateFrameCount ?? 0,
+          landmarkMotionScore: auth.landmarkMotionScore ?? 0,
+          embeddingVarianceScore: auth.embeddingVarianceScore ?? 0,
+          rejectionReason: auth.rejectionReason ?? '',
+          authLatencyMs: auth.authLatencyMs ?? 0,
         });
 
         // Detailed telemetry console logging
@@ -635,7 +645,6 @@ export default function AuthenticateScreen() {
           <Text style={styles.processingText}>Cross-matching biometrics (Database &gt;95%)</Text>
         </Animated.View>
       )}
-
       {isCamera && (
         <View style={styles.telemetryOverlayContainer}>
           <LightingIndicator score={lightingScore} issue={lightingIssue} />
@@ -667,11 +676,42 @@ export default function AuthenticateScreen() {
                   <Text style={styles.telemetryLabel}>Confidence Gap</Text>
                   <Text style={styles.telemetryValue}>{(telemetry.gapConfidence * 100).toFixed(1)}%</Text>
                 </View>
+                
+                {/* Advanced Admin Spoof & Latency Diagnostics */}
+                <View style={styles.telemetryRow}>
+                  <Text style={styles.telemetryLabel}>Lag/Duplicate Frames</Text>
+                  <Text style={styles.telemetryValue}>{telemetry.duplicateFrameCount}</Text>
+                </View>
+                <View style={styles.telemetryRow}>
+                  <Text style={styles.telemetryLabel}>Landmark Rigidity</Text>
+                  <Text style={styles.telemetryValue}>{telemetry.landmarkMotionScore.toFixed(5)}</Text>
+                </View>
+                <View style={styles.telemetryRow}>
+                  <Text style={styles.telemetryLabel}>Embedding Var</Text>
+                  <Text style={styles.telemetryValue}>{telemetry.embeddingVarianceScore.toFixed(5)}</Text>
+                </View>
+                <View style={styles.telemetryRow}>
+                  <Text style={styles.telemetryLabel}>Latency</Text>
+                  <Text style={styles.telemetryValue}>{telemetry.authLatencyMs} ms</Text>
+                </View>
               </View>
+              
+              {telemetry.rejectionReason ? (
+                <>
+                  <View style={styles.divider} />
+                  <View style={styles.telemetryRow}>
+                    <Text style={[styles.telemetryLabel, {color: Colors.danger}]}>Reason</Text>
+                    <Text style={[styles.telemetryValue, {color: Colors.danger, fontSize: 10, flex: 1, textAlign: 'right'}]} numberOfLines={2}>
+                      {telemetry.rejectionReason}
+                    </Text>
+                  </View>
+                </>
+              ) : null}
+              
               <View style={styles.divider} />
               <View style={styles.telemetryRowTotal}>
                 <Text style={styles.telemetryLabelTotal}>Aggregated Confidence</Text>
-                <Text style={[styles.telemetryValueTotal, telemetry.finalConfidence >= 0.95 ? {color: Colors.success} : {color: Colors.accent}]}>
+                <Text style={[styles.telemetryValueTotal, telemetry.finalConfidence >= 0.85 ? {color: Colors.success} : {color: Colors.accent}]}>
                   {(telemetry.finalConfidence * 100).toFixed(1)}%
                 </Text>
               </View>

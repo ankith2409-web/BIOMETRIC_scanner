@@ -25,6 +25,11 @@ export interface AuthResult {
   gap?: number;
   isSpoof?: boolean;
   historySize?: number;
+  duplicateFrameCount?: number;
+  landmarkMotionScore?: number;
+  embeddingVarianceScore?: number;
+  rejectionReason?: string;
+  authLatencyMs?: number;
 }
 
 export interface DetectionBox {
