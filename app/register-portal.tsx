@@ -31,6 +31,7 @@ import AnimatedButton from '../components/ui/AnimatedButton';
 import GlassCard from '../components/ui/GlassCard';
 import CameraView from '../components/camera/CameraView';
 import ArchitectureIcon from '../components/ui/ArchitectureIcons';
+import Toast from '../components/ui/Toast';
 import { Colors, Typography, FontSizes, BorderRadius, Shadows } from '../constants/theme';
 import { storageService } from '../services/storageService';
 import { sqliteService } from '../services/sqliteService';
@@ -363,12 +364,14 @@ export default function RegisterPortalScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const phoneParam = (params.phone as string) || '';
+  const nameParam = (params.name as string) || '';
 
   // Registration identity
-  const [enrollName, setEnrollName] = useState('');
+  const [enrollName, setEnrollName] = useState(nameParam);
   const [enrollPhone, setEnrollPhone] = useState(phoneParam);
-  const [stage, setStage] = useState<RegisterStage>('name-input');
+  const [stage, setStage] = useState<RegisterStage>('scan-center');
   const [loadingStatus, setLoadingStatus] = useState(t('initModels'));
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [modelsLoaded, setModelsLoaded] = useState(false);
 
   // Language & UI states
@@ -677,13 +680,13 @@ export default function RegisterPortalScreen() {
       const userGallery = storageService
         .getFaceEmbeddingsAsGallery()
         .filter(e => e.userId === existingUser.id);
-      
+
       if (userGallery.length > 0) {
         const match = matchEmbedding(embeddingCenter.current, userGallery, threshold, 0.08);
         if (!match.matched) {
-          alert("Identity verification failed. Scanned face does not match the registered profile for this ID.");
+          setToast({ message: "Identity verification failed. Scanned face does not match the registered profile.", type: 'error' });
           setDebugText("Identity mismatch! Scanned face is different from the registered user.");
-          
+
           embeddingCenter.current = null;
           embeddingLeft.current = null;
           embeddingRight.current = null;
@@ -765,12 +768,12 @@ export default function RegisterPortalScreen() {
   const handleStartScan = () => {
     if (enrollName.trim().length >= 2 && enrollPhone.length >= 10) {
       const existingUsers = storageService.getUsers();
-      
+
       const dupName = existingUsers.some(
         u => u.name.toLowerCase().trim() === enrollName.toLowerCase().trim() && u.phone !== enrollPhone
       );
       if (dupName) {
-        alert("A user with this name already exists. Please choose a unique name.");
+        setToast({ message: "A user with this name already exists. Please choose a unique name.", type: 'error' });
         return;
       }
 
@@ -831,13 +834,21 @@ export default function RegisterPortalScreen() {
           <MaterialCommunityIcons name="arrow-left" size={24} color={Colors.textPrimary} />
         </Pressable>
         <Text style={styles.topTitle}>{t('regTitle')}</Text>
-        <Pressable 
-          onPress={() => setShowLanguageSelect(true)} 
+        <Pressable
+          onPress={() => setShowLanguageSelect(true)}
           style={styles.backButton}
         >
           <MaterialCommunityIcons name="translate" size={22} color={Colors.accent} />
         </Pressable>
       </View>
+
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
 
       {/* 0. LANGUAGE SELECTION MODAL */}
       {showLanguageSelect && (
@@ -848,8 +859,8 @@ export default function RegisterPortalScreen() {
               {t('selectLocaleDesc')}
             </Text>
 
-            <ScrollView 
-              style={styles.languageList} 
+            <ScrollView
+              style={styles.languageList}
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.languageListContent}
             >
@@ -886,46 +897,13 @@ export default function RegisterPortalScreen() {
                 })}
               </View>
             </ScrollView>
-            
+
             <AnimatedButton
               label={t('back')}
               onPress={() => setShowLanguageSelect(false)}
               variant="ghost"
               icon="arrow-left"
               style={{ marginTop: 16 }}
-            />
-          </GlassCard>
-        </Animated.View>
-      )}
-
-      {/* 1. INITIAL NAME INPUT */}
-      {stage === 'name-input' && !showLanguageSelect && (
-        <Animated.View entering={FadeInUp.duration(600)} style={styles.inputForm}>
-          <GlassCard padding={24}>
-            <View style={styles.formIcon}>
-              <MaterialCommunityIcons name="account-plus-outline" size={44} color={Colors.accent} />
-            </View>
-            <Text style={styles.formTitle}>{t('biometricEnrollmentTitle')}</Text>
-            <Text style={styles.formSubtitle}>
-              {t('regSubtitle')} +91 {enrollPhone.replace('+91', '')}
-            </Text>
-
-            <TextInput
-              style={styles.nameInput}
-              placeholder={t('regNamePlaceholder')}
-              placeholderTextColor={Colors.textTertiary}
-              value={enrollName}
-              onChangeText={setEnrollName}
-              maxLength={40}
-            />
-
-            <AnimatedButton
-              label={modelsLoaded ? t('regInitScanner') : t('loadingModels')}
-              onPress={handleStartScan}
-              disabled={!modelsLoaded || enrollName.trim().length < 2}
-              variant="primary"
-              icon="face-recognition"
-              style={{ marginTop: 24 }}
             />
           </GlassCard>
         </Animated.View>

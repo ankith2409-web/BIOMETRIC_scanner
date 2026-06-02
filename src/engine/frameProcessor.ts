@@ -4,6 +4,8 @@ import { modelLoader } from './modelLoader';
 import { FaceEmbedding, FrameProcessResult, LandmarkPoint, DetectionBox } from '../types/face';
 import { matchEmbedding } from './matcher';
 import { faceMeshModule } from './faceMeshModule';
+import { antiSpoofingModule } from './antiSpoofingModule';
+import { mtcnnModule } from './mtcnnModule';
 import { storageService } from '../../services/storageService';
 import {
   applyWhiteBalance,
@@ -156,10 +158,15 @@ class FrameProcessorEngine {
     const enhanced = applyCLAHE(processedFrame, 128, 128, 2.0, [8, 8]);
 
     const t0 = Date.now();
-    const detectOut = await models.blazeFace.run(enhanced);
-    timing.detect = toMs(t0);
+    // Try MTCNN first for high-precision detection
+    let detections = await mtcnnModule.detect(enhanced, 128, 128);
 
-    const detections = this.parseAllDetections(detectOut);
+    // Fallback to BlazeFace if MTCNN finds nothing
+    if (!detections.length) {
+      const detectOut = await models.blazeFace.run(enhanced);
+      detections = this.parseAllDetections(detectOut);
+    }
+    timing.detect = toMs(t0);
     if (!detections.length) {
       return { faceFound: false, livenessPass: false, timing };
     }
@@ -195,6 +202,9 @@ class FrameProcessorEngine {
     const cropped192 = this.cropAndResize(enhanced, 128, 128, paddedDetection, 192, 192);
     // Real-time quality check and dynamic enhancement on face crop
     const finalFaceCrop = realTimeQualityCheckAndEnhance(cropped192, 192, 192);
+
+    // Model-based anti-spoofing check
+    const antiSpoofResult = await antiSpoofingModule.check(finalFaceCrop, 192, 192);
 
     const meshOut = await models.faceMesh.run(finalFaceCrop);
     timing.mesh = toMs(t1);
@@ -248,7 +258,7 @@ class FrameProcessorEngine {
 
     const t3 = Date.now();
     const alignedNormalizedFloatArray = meshResult.result.alignedFaceTensor.dataSync();
-    const embeddingOut = await models.mobileFaceNet.run(alignedNormalizedFloatArray);
+    const embeddingOut = await models.mobileFaceNetFull.run(alignedNormalizedFloatArray);
     const embedding = this.parseEmbedding(embeddingOut);
     timing.embed = toMs(t3);
     timing.total = toMs(t0);
@@ -282,7 +292,7 @@ class FrameProcessorEngine {
       lightingScore: lighting.score,
       lightingIssue: lighting.issue,
       livenessScore: livenessResult.livenessScore,
-      isSpoof: livenessResult.isSpoof,
+      isSpoof: antiSpoofResult.isSpoof || livenessResult.isSpoof,
       qualityConfidence,
     };
   }

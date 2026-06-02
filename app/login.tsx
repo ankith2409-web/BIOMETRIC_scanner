@@ -29,7 +29,7 @@ import LandmarkDots from '../components/camera/LandmarkDots';
 import AnimatedButton from '../components/ui/AnimatedButton';
 import ArchitectureIcon from '../components/ui/ArchitectureIcons';
 import GlassCard from '../components/ui/GlassCard';
-import IndianFlag from '@/components/ui/IndianFlag';
+import Toast from '../components/ui/Toast';
 import LivenessPrompt from '../components/camera/LivenessPrompt';
 import LightingIndicator from '../components/camera/LightingIndicator';
 import { BorderRadius, Colors, FontSizes, Shadows, Typography } from '../constants/theme';
@@ -41,7 +41,7 @@ import { modelLoader } from '../src/engine/modelLoader';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-type ScreenMode = 'language-select' | 'phone-input' | 'face-auth' | 'success' | 'not-found';
+type ScreenMode = 'language-select' | 'phone-input' | 'face-auth' | 'success' | 'not-found' | 'admin-password';
 
 function FloatingParticle({ delay, x, y, size = 3 }: { delay: number; x: number; y: number; size?: number }) {
   const opacity = useSharedValue(0.1);
@@ -290,20 +290,33 @@ export default function LoginScreen() {
   const router = useRouter();
 
   const handleAdminBypass = () => {
-    const adminUser = {
-      id: 'admin',
-      name: 'Administrator',
-      phone: '+919999999999',
-      registeredAt: new Date().toISOString().split('T')[0],
-      status: 'active' as const,
-    };
-    storageService.setLoggedInUser(adminUser);
-    router.replace('/(tabs)');
+    setMode('admin-password');
+  };
+
+  const verifyAdminPassword = () => {
+    if (adminPassword === '00000') {
+      const adminUser = {
+        id: 'admin',
+        name: 'Administrator',
+        phone: adminPhone || '+919999999999',
+        registeredAt: new Date().toISOString().split('T')[0],
+        status: 'active' as const,
+      };
+      storageService.setLoggedInUser(adminUser);
+      router.replace('/(tabs)');
+    } else {
+      setToast({ message: 'Incorrect Admin Password', type: 'error' });
+      setAdminPassword('');
+    }
   };
 
   // Screen modes & inputs
   const [mode, setMode] = useState<ScreenMode>('language-select');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [adminPhone, setAdminPhone] = useState('');
+  const [userName, setUserName] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState<string>(getLocale());
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [matchedUser, setMatchedUser] = useState<any>(null);
   const [loadingStatus, setLoadingStatus] = useState(t('initModels'));
@@ -385,7 +398,7 @@ export default function LoginScreen() {
       // Go directly to registration â€” no intermediate "not found" screen
       router.replace({
         pathname: '/register-portal',
-        params: { phone: fullPhone },
+        params: { phone: fullPhone, name: userName },
       });
     }
   };
@@ -557,7 +570,7 @@ export default function LoginScreen() {
             failReason = 'Identity could not be verified. Ensure your face is registered.';
           }
           setDebugText(failReason);
-          alert(failReason);
+          setToast({ message: failReason, type: 'error' });
           setMode('phone-input');
           setMatchedUser(null);
         }
@@ -611,6 +624,14 @@ export default function LoginScreen() {
         <FloatingParticle delay={2200} x={180} y={200} size={3} />
       </View>
 
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
+
       {/* Admin Bypass Button in Top-Right Corner */}
       {(mode === 'phone-input' || mode === 'language-select') && (
         <Pressable
@@ -622,7 +643,69 @@ export default function LoginScreen() {
         </Pressable>
       )}
 
+      {/* ADMIN PASSWORD MODE */}
+      {mode === 'admin-password' && (
+        <Animated.View entering={FadeInUp.duration(600)} style={styles.inputForm}>
+          <GlassCard padding={24}>
+            <AnimatedFormIcon>
+              <MaterialCommunityIcons name="lock-outline" size={44} color={Colors.accent} />
+            </AnimatedFormIcon>
+            <Text style={styles.formTitle}>Admin Access</Text>
+            <Text style={styles.formSubtitle}>
+              Please enter your credentials to continue.
+            </Text>
+
+            <View style={{ gap: 12 }}>
+              <View style={styles.phoneInputWrapper}>
+                <TextInput
+                  style={styles.phoneInput}
+                  placeholder="Admin Mobile Number"
+                  placeholderTextColor={Colors.textTertiary}
+                  value={adminPhone}
+                  onChangeText={setAdminPhone}
+                  keyboardType="numeric"
+                />
+              </View>
+
+              <View style={styles.phoneInputWrapper}>
+                <TextInput
+                  style={styles.phoneInput}
+                  placeholder="Enter Password"
+                  placeholderTextColor={Colors.textTertiary}
+                  value={adminPassword}
+                  onChangeText={setAdminPassword}
+                  secureTextEntry
+                  keyboardType="numeric"
+                  maxLength={5}
+                />
+              </View>
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 24 }}>
+              <AnimatedButton
+                label="Cancel"
+                onPress={() => {
+                  setMode('phone-input');
+                  setAdminPassword('');
+                  setAdminPhone('');
+                }}
+                variant="ghost"
+                style={{ flex: 1 }}
+              />
+              <AnimatedButton
+                label="Verify"
+                onPress={verifyAdminPassword}
+                variant="primary"
+                icon="lock-check"
+                style={{ flex: 1 }}
+              />
+            </View>
+          </GlassCard>
+        </Animated.View>
+      )}
+
       {/* 0. LANGUAGE SELECTION MODE */}
+
       {mode === 'language-select' && (
         <Animated.View entering={FadeInUp.duration(600)} style={styles.inputForm}>
           <GlassCard padding={16}>
@@ -695,26 +778,38 @@ export default function LoginScreen() {
               {t('phoneSubtitle')}
             </Text>
 
-            <View style={styles.phoneInputWrapper}>
-              <View style={styles.phonePrefix}>
-                <IndianFlag width={22} height={14} style={{ marginRight: 6 }} />
-                <Text style={styles.phonePrefixText}>+91</Text>
+            <View style={{ gap: 12 }}>
+              <View style={styles.phoneInputWrapper}>
+                <TextInput
+                  style={styles.phoneInput}
+                  placeholder="Full Name"
+                  placeholderTextColor={Colors.textTertiary}
+                  value={userName}
+                  onChangeText={setUserName}
+                />
               </View>
-              <TextInput
-                style={styles.phoneInput}
-                placeholder="98765 43210"
-                placeholderTextColor={Colors.textTertiary}
-                value={phoneNumber}
-                onChangeText={(val) => setPhoneNumber(val.replace(/\D/g, ''))}
-                keyboardType="numeric"
-                maxLength={10}
-              />
+
+              <View style={styles.phoneInputWrapper}>
+                <View style={styles.phonePrefix}>
+                  <IndianFlag width={22} height={14} style={{ marginRight: 6 }} />
+                  <Text style={styles.phonePrefixText}>+91</Text>
+                </View>
+                <TextInput
+                  style={styles.phoneInput}
+                  placeholder="98765 43210"
+                  placeholderTextColor={Colors.textTertiary}
+                  value={phoneNumber}
+                  onChangeText={(val) => setPhoneNumber(val.replace(/\D/g, ''))}
+                  keyboardType="numeric"
+                  maxLength={10}
+                />
+              </View>
             </View>
 
             <AnimatedButton
               label={modelsLoaded ? t('verifyIdentity') : t('loadingModels')}
               onPress={handleVerifyPhone}
-              disabled={!modelsLoaded || phoneNumber.replace(/\D/g, '').length !== 10}
+              disabled={!modelsLoaded || phoneNumber.replace(/\D/g, '').length !== 10 || userName.trim().length === 0}
               variant="primary"
               icon="fingerprint"
               style={{ marginTop: 24 }}

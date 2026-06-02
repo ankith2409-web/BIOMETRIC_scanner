@@ -214,20 +214,9 @@ export default function SyncScreen() {
         throw new Error(`Sync server responded with status: ${response.status}`);
       }
     } catch (err) {
-      console.warn('Network sync failed, executing offline demo fallback:', err);
-      // Simulated upload fallback for demonstration
-      setTimeout(() => {
-        storageService.saveAttendanceRecords([]);
-        sqliteService.purgeAuthLogs();
-        const syncedLogs = logs.map(l => 
-          l.status === 'pending' ? { ...l, status: 'synced' as const } : l
-        );
-        setLogs(syncedLogs);
-        setLastSyncedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-        setSyncing(false);
-        storageService.notifySyncSuccess();
-      }, 2000);
-      return;
+      console.error('Network sync failed:', err);
+      setSyncing(false);
+      alert(t('syncError') || 'Network sync failed. Please check your connection and try again.');
     }
     setSyncing(false);
   };

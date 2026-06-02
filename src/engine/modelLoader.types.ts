@@ -7,4 +7,9 @@ export interface LoadedModels {
   blazeFace: TFLiteModel;
   faceMesh: TFLiteModel;
   mobileFaceNet: TFLiteModel;
+  mobileFaceNetFull: TFLiteModel;
+  antiSpoofing: TFLiteModel;
+  pNet: TFLiteModel;
+  rNet: TFLiteModel;
+  oNet: TFLiteModel;
 }
