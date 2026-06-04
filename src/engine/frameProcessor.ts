@@ -337,7 +337,7 @@ class FrameProcessorEngine {
     }
     this.lastBox = currentBox;
 
-    const fullGallery = gallery && gallery.length ? gallery : storageService.getFaceEmbeddingsAsGallery();
+    const fullGallery = gallery !== undefined ? gallery : storageService.getFaceEmbeddingsAsGallery();
     const threshold = storageService.getSettings().threshold;
     const confidenceGapMargin = 0.08;
 
@@ -398,7 +398,7 @@ class FrameProcessorEngine {
     if (isSpoof) {
       rejectionReason = this.liveness.getRejectionReason() || 'Anti-spoofing verification failed.';
     } else if (avgDistance > threshold) {
-      rejectionReason = 'Identity could not be verified. Face not recognized in local database.';
+      rejectionReason = 'Identity is not matched.';
     } else if (finalConfidence < 0.85) {
       rejectionReason = `Face match confidence score is too low (${Math.round(finalConfidence * 100)}%). Face not recognized. Please try again.`;
     } else if (!livenessPass) {

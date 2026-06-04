@@ -292,14 +292,18 @@ export default function AuthenticateScreen() {
   }, [authState]);
 
   // Frame processing loop
-  // Frame processing loop
   const handleFrame = useCallback(async (frame: Uint8Array) => {
     if (isProcessing.current || authState === 'success' || authState === 'failure' || authState === 'loading') return;
     isProcessing.current = true;
 
     try {
       const threshold = storageService.getSettings().threshold;
-      const { auth, process } = await frameProcessorEngine.processForAuth(frame, undefined, (msg) => {
+      const loggedInUser = storageService.getLoggedInUser();
+      const userGallery = loggedInUser 
+        ? storageService.getFaceEmbeddingsAsGallery().filter(e => e.userId === loggedInUser.id)
+        : undefined;
+
+      const { auth, process } = await frameProcessorEngine.processForAuth(frame, userGallery, (msg) => {
         setDebugText(msg);
       });
       console.log('[FaceGate][Auth] timing(ms)', process.timing);
@@ -454,13 +458,13 @@ export default function AuthenticateScreen() {
           matchAttempts.current += 1;
 
           // Track detailed rejection reason for the final overlay
-          let rejectionMsg = 'Identity could not be verified. Ensure your face is registered.';
+          let rejectionMsg = 'Identity is not matched. Ensure your face is registered.';
           if (auth.isSpoof) {
             rejectionMsg = 'Anti-spoofing verification failed. Photo/replay detected.';
           } else if (!auth.livenessPass) {
             rejectionMsg = 'Liveness verification failed. Hold still and look naturally at the camera.';
           } else if (auth.bestDist > threshold) {
-            rejectionMsg = 'Identity could not be verified. Face not recognized in local database.';
+            rejectionMsg = 'Identity is not matched.';
           }
           lastRejectionReason.current = rejectionMsg;
 
