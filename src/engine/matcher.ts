@@ -109,10 +109,10 @@ export const matchEmbedding = (
   const matched = thresholdPass && gapPass;
 
   // Calculate recognition confidence based on Euclidean distance
-  // A distance of 0.0 maps to 1.0 (100%), and distance of threshold maps to 0.85.
+  // A distance of 0.0 maps to 1.0 (100%), and distance of threshold maps to 0.95.
   const recognitionConfidence = bestDist <= threshold
-    ? Math.max(0, Math.min(1, 1.0 - (bestDist / threshold) * 0.15))
-    : Math.max(0, Math.min(0.85, 0.85 - ((bestDist - threshold) / Math.max(0.01, 1.0 - threshold)) * 0.85));
+    ? Math.max(0, Math.min(1, 1.0 - (bestDist / threshold) * 0.05))
+    : Math.max(0, Math.min(0.95, 0.95 - ((bestDist - threshold) / Math.max(0.01, 1.0 - threshold)) * 0.95));
 
   // Calculate gap confidence
   // If gap is above margin, it ranges from 0.95 to 1.0. If below, it is 0.0.

@@ -639,7 +639,7 @@ class FrameProcessorEngineWeb {
       livenessPass &&
       temporalConsistencyPass &&
       result.qualityPass === true &&
-      finalConfidence >= 0.85;
+      finalConfidence >= 0.95;
 
     // Rejection diagnostics tracking
     let rejectionReason = '';
@@ -647,7 +647,7 @@ class FrameProcessorEngineWeb {
       rejectionReason = this.liveness.getRejectionReason() || 'Anti-spoofing verification failed.';
     } else if (avgDistance > threshold) {
       rejectionReason = 'Identity is not matched.';
-    } else if (finalConfidence < 0.85) {
+    } else if (finalConfidence < 0.95) {
       rejectionReason = `Face match confidence score is too low (${Math.round(finalConfidence * 100)}%). Face not recognized. Please try again.`;
     } else if (!livenessPass) {
       rejectionReason = 'Liveness verification failed. Hold still and look naturally at the camera.';
