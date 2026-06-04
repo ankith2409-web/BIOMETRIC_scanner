@@ -8,6 +8,7 @@
     "@expo/vector-icons": "^15.1.1",
     "@react-native-community/slider": "^5.2.0",
     "@tensorflow/tfjs": "^4.22.0",
+    "@tensorflow/tfjs-tflite": "^0.0.1-alpha.10",
     "expo": "~56.0.5",
     "expo-blur": "^56.0.3",
     "expo-camera": "^56.0.7",

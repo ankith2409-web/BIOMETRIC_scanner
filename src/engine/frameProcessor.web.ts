@@ -5,6 +5,8 @@ import { matchEmbedding, euclideanDistance } from './matcher';
 import { faceMeshModule } from './faceMeshModule';
 import { storageService } from '../../services/storageService';
 import { getLightingScore } from './imagePreprocessing';
+import { modelLoader } from './modelLoader';
+import { antiSpoofingModule } from './antiSpoofingModule';
 
 class FrameProcessorEngineWeb {
   private liveness = new LivenessChecker();
@@ -115,11 +117,79 @@ class FrameProcessorEngineWeb {
     return this.l2Normalize(centroid);
   }
 
+  private parseEmbedding(raw: unknown): Float32Array {
+    const values = this.extractFloatArray(raw);
+    if (!values || values.length < 128) return new Float32Array(128);
+    const out = new Float32Array(128);
+    out.set(values.slice(0, 128));
+    return this.l2Normalize(out);
+  }
+
+  private extractFloatArray(raw: unknown): Float32Array | null {
+    if (!raw) return null;
+    if (raw instanceof Float32Array) return raw;
+    if (Array.isArray(raw) && raw.length > 0) {
+      if (typeof raw[0] === 'number') return Float32Array.from(raw as number[]);
+      const nested = raw.find((v) => Array.isArray(v) || v instanceof Float32Array);
+      if (nested instanceof Float32Array) return nested;
+      if (Array.isArray(nested)) return Float32Array.from(nested as number[]);
+    }
+    if (typeof raw === 'object') {
+      const candidate = (raw as Record<string, unknown>).output
+        ?? (raw as Record<string, unknown>).outputs
+        ?? (raw as Record<string, unknown>).data;
+      return this.extractFloatArray(candidate);
+    }
+    return null;
+  }
+
+  private cropAndResize(
+    source: Uint8Array,
+    sourceWidth: number,
+    sourceHeight: number,
+    box: { x: number; y: number; width: number; height: number },
+    outWidth: number,
+    outHeight: number
+  ): Uint8Array {
+    const out = new Uint8Array(outWidth * outHeight * 3);
+    const x0 = box.x * sourceWidth;
+    const y0 = box.y * sourceHeight;
+    const bw = Math.max(box.width * sourceWidth, 1);
+    const bh = Math.max(box.height * sourceHeight, 1);
+
+    for (let oy = 0; oy < outHeight; oy += 1) {
+      const sy = y0 + (oy / Math.max(outHeight - 1, 1)) * bh;
+      const y1 = Math.max(0, Math.min(sourceHeight - 1, Math.floor(sy)));
+      const y2 = Math.max(0, Math.min(sourceHeight - 1, y1 + 1));
+      const wy = sy - y1;
+
+      for (let ox = 0; ox < outWidth; ox += 1) {
+        const sx = x0 + (ox / Math.max(outWidth - 1, 1)) * bw;
+        const x1 = Math.max(0, Math.min(sourceWidth - 1, Math.floor(sx)));
+        const x2 = Math.max(0, Math.min(sourceWidth - 1, x1 + 1));
+        const wx = sx - x1;
+
+        const dst = (oy * outWidth + ox) * 3;
+        for (let c = 0; c < 3; c += 1) {
+          const p11 = source[(y1 * sourceWidth + x1) * 3 + c] || 0;
+          const p12 = source[(y1 * sourceWidth + x2) * 3 + c] || 0;
+          const p21 = source[(y2 * sourceWidth + x1) * 3 + c] || 0;
+          const p22 = source[(y2 * sourceWidth + x2) * 3 + c] || 0;
+          const top = p11 * (1 - wx) + p12 * wx;
+          const bottom = p21 * (1 - wx) + p22 * wx;
+          out[dst + c] = Math.round(top * (1 - wy) + bottom * wy);
+        }
+      }
+    }
+    return out;
+  }
+
   private async ensureReady(log?: (msg: string) => void): Promise<any> {
     if (this.faceapiRef && this.modelsReady) return this.faceapiRef;
     log?.('[processor] Initializing face-api.js & models');
     this.faceapiRef = await faceApiService.loadFaceApi(log);
     await faceApiService.loadModels(log);
+    await modelLoader.loadAll(log as any); // Load custom TFLite models
     this.modelsReady = true;
     return this.faceapiRef;
   }
@@ -384,7 +454,43 @@ class FrameProcessorEngineWeb {
         meshResult.result.faceAngle
       );
 
-      const embedding = this.l2Normalize(Float32Array.from(detection.descriptor));
+      const models = modelLoader.getModels();
+      let embedding: Float32Array;
+      let antiSpoofResult = { isSpoof: false, score: 0 };
+      
+      if (models) {
+        // Crop face bounding box with 20% padding for AntiSpoofing
+        const padX = normDetection.width * 0.20;
+        const padY = normDetection.height * 0.20;
+        const paddedDetection = {
+          x: Math.max(0, normDetection.x - padX),
+          y: Math.max(0, normDetection.y - padY),
+          width: Math.min(1.0 - Math.max(0, normDetection.x - padX), normDetection.width + 2 * padX),
+          height: Math.min(1.0 - Math.max(0, normDetection.y - padY), normDetection.height + 2 * padY),
+          score: normDetection.score,
+        };
+        const cropped192 = this.cropAndResize(filteredRGB, size, size, paddedDetection, 192, 192);
+        
+        // AntiSpoofing check
+        antiSpoofResult = await antiSpoofingModule.check(cropped192, 192, 192);
+        
+        // MobileFaceNet embedding
+        const alignedNormalizedFloatArray = meshResult.result.alignedFaceTensor.dataSync
+          ? meshResult.result.alignedFaceTensor.dataSync()
+          : (typeof meshResult.result.alignedFaceTensor === 'object' && meshResult.result.alignedFaceTensor.isMock 
+              ? meshResult.result.alignedFaceTensor.dataSync()
+              : null);
+
+        if (alignedNormalizedFloatArray) {
+          const embeddingOut = await models.mobileFaceNetFull.run(alignedNormalizedFloatArray);
+          embedding = this.parseEmbedding(embeddingOut);
+        } else {
+          embedding = this.l2Normalize(Float32Array.from(detection.descriptor));
+        }
+      } else {
+        embedding = this.l2Normalize(Float32Array.from(detection.descriptor));
+      }
+
       const livenessResult = this.liveness.update(returnedLandmarks, ear, embedding);
 
       const sig = {
@@ -418,7 +524,7 @@ class FrameProcessorEngineWeb {
         lightingScore: lighting.score,
         lightingIssue: lighting.issue,
         livenessScore: livenessResult.livenessScore,
-        isSpoof: livenessResult.isSpoof,
+        isSpoof: antiSpoofResult.isSpoof || livenessResult.isSpoof,
         qualityConfidence,
       };
     } catch (err: any) {
