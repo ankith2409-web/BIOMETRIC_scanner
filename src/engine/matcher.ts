@@ -1,6 +1,7 @@
 import { FaceEmbedding } from '../types/face';
 
 export const euclideanDistance = (a: Float32Array, b: Float32Array): number => {
+  if (a.length === 0 || b.length === 0) return Infinity;
   let sum = 0;
   const len = Math.min(a.length, b.length);
   for (let i = 0; i < len; i += 1) {
@@ -20,6 +21,7 @@ const euclideanDistanceEarlyExit = (
   b: Float32Array,
   bestSoFarSq: number
 ): number => {
+  if (a.length === 0 || b.length === 0) return Infinity;
   let sum = 0;
   const len = Math.min(a.length, b.length);
   for (let i = 0; i < len; i += 1) {
@@ -50,7 +52,7 @@ export interface GalleryEntry extends FaceEmbedding {
 export const matchEmbedding = (
   probe: Float32Array,
   gallery: GalleryEntry[],
-  threshold = 0.58,
+  threshold = 0.45,
   confidenceGapMargin = 0.08
 ): MatchResult => {
   if (!gallery.length) {
@@ -107,12 +109,10 @@ export const matchEmbedding = (
   const matched = thresholdPass && gapPass;
 
   // Calculate recognition confidence based on Euclidean distance
-  // A distance of 0.0 maps to 1.0 (100%), and distance of threshold maps to 0.95.
-  // Formula: recognitionConfidence = 1.0 - (bestDist * (0.05 / threshold))
-  const recognitionConfidence = Math.max(
-    0,
-    Math.min(1, 1.0 - bestDist * (0.05 / threshold))
-  );
+  // A distance of 0.0 maps to 1.0 (100%), and distance of threshold maps to 0.75.
+  const recognitionConfidence = bestDist <= threshold
+    ? Math.max(0, Math.min(1, 1.0 - (bestDist / threshold) * 0.25))
+    : Math.max(0, Math.min(0.75, 0.75 - ((bestDist - threshold) / Math.max(0.01, 1.0 - threshold)) * 0.75));
 
   // Calculate gap confidence
   // If gap is above margin, it ranges from 0.95 to 1.0. If below, it is 0.0.

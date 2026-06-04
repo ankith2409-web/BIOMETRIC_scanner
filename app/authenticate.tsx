@@ -292,11 +292,13 @@ export default function AuthenticateScreen() {
   }, [authState]);
 
   // Frame processing loop
+  // Frame processing loop
   const handleFrame = useCallback(async (frame: Uint8Array) => {
     if (isProcessing.current || authState === 'success' || authState === 'failure' || authState === 'loading') return;
     isProcessing.current = true;
 
     try {
+      const threshold = storageService.getSettings().threshold;
       const { auth, process } = await frameProcessorEngine.processForAuth(frame, undefined, (msg) => {
         setDebugText(msg);
       });
@@ -390,14 +392,14 @@ export default function AuthenticateScreen() {
 
         // Detailed telemetry console logging
         console.log(`[FaceGate][Auth][Telemetry] Attempt ${matchAttempts.current + 1}/45
-          - Recognition Distance (bestDist): ${auth.bestDist?.toFixed(4)} (Threshold: 0.58)
+          - Recognition Distance (bestDist): ${auth.bestDist?.toFixed(4)} (Threshold: ${threshold})
           - Runner-up Distance: ${auth.runnerUpDist?.toFixed(4)}
           - Confidence Gap: ${auth.gap?.toFixed(4)} (Margin: 0.08, Pass: ${auth.gapPass})
           - Liveness Confidence: ${auth.livenessConfidence?.toFixed(4)} (Threshold: 0.65, Pass: ${auth.livenessPass})
           - Image Quality Confidence: ${auth.qualityConfidence?.toFixed(4)} (Pass: ${process.qualityPass})
           - Temporal Confidence: ${auth.temporalConfidence?.toFixed(4)} (Size: ${auth.historySize}/3)
           - Frame Processing Time: ${process.timing?.total ?? 'N/A'}ms
-          - Rejection Reason: ${auth.isSpoof ? 'Photo Spoof detected' : (!auth.livenessPass ? 'Liveness failed (hold still)' : (auth.bestDist > 0.58 ? 'Face mismatch' : 'Gap/Temporal check failed'))}
+          - Rejection Reason: ${auth.isSpoof ? 'Photo Spoof detected' : (!auth.livenessPass ? 'Liveness failed (hold still)' : (auth.bestDist > threshold ? 'Face mismatch' : 'Gap/Temporal check failed'))}
         `);
       }
 
@@ -457,7 +459,7 @@ export default function AuthenticateScreen() {
             rejectionMsg = 'Anti-spoofing verification failed. Photo/replay detected.';
           } else if (!auth.livenessPass) {
             rejectionMsg = 'Liveness verification failed. Hold still and look naturally at the camera.';
-          } else if (auth.bestDist > 0.58) {
+          } else if (auth.bestDist > threshold) {
             rejectionMsg = 'Identity could not be verified. Face not recognized in local database.';
           }
           lastRejectionReason.current = rejectionMsg;

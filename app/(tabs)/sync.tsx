@@ -180,6 +180,7 @@ export default function SyncScreen() {
           timestamp: new Date().toISOString(),
           logs: localLogs.filter(l => l.status === 'success'),
           attendance: attendanceRecords.map(r => ({
+            userId: r.userId,
             name: r.userName,
             timeAttended: {
               checkIn: r.checkIn || null,

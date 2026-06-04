@@ -17,6 +17,11 @@ class ModelLoaderSingleton {
       blazeFace: { run: async () => ({}) },
       faceMesh: { run: async () => ({}) },
       mobileFaceNet: { run: async () => ({}) },
+      mobileFaceNetFull: { run: async () => ({}) },
+      antiSpoofing: { run: async () => ({}) },
+      pNet: { run: async () => ({}) },
+      rNet: { run: async () => ({}) },
+      oNet: { run: async () => ({}) },
     };
     
     // Simulate minor delay for compatibility with UI loaders

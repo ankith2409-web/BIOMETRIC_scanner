@@ -507,7 +507,7 @@ class FrameProcessorEngineWeb {
     const isSpoof = result.isSpoof ?? false;
     const livenessPass = result.livenessPass ?? false;
     const qualityConfidence = result.qualityConfidence ?? 0.0;
-    const recogConfidence = Math.max(0, Math.min(1, 1.0 - match.bestDist));
+    const recogConfidence = match.recognitionConfidence;
     const gapConfidence = match.gapConfidence;
     const gapPass = match.gapPass;
 
@@ -532,7 +532,8 @@ class FrameProcessorEngineWeb {
       gapPass &&
       livenessPass &&
       temporalConsistencyPass &&
-      result.qualityPass === true;
+      result.qualityPass === true &&
+      finalConfidence >= 0.85;
 
     // Rejection diagnostics tracking
     let rejectionReason = '';
@@ -540,6 +541,8 @@ class FrameProcessorEngineWeb {
       rejectionReason = this.liveness.getRejectionReason() || 'Anti-spoofing verification failed.';
     } else if (avgDistance > threshold) {
       rejectionReason = 'Identity could not be verified. Face not recognized in local database.';
+    } else if (finalConfidence < 0.85) {
+      rejectionReason = `Face match confidence score is too low (${Math.round(finalConfidence * 100)}%). Face not recognized. Please try again.`;
     } else if (!livenessPass) {
       rejectionReason = 'Liveness verification failed. Hold still and look naturally at the camera.';
     } else if (!temporalConsistencyPass) {

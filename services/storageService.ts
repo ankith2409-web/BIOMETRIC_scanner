@@ -101,53 +101,28 @@ export const storageService = {
       const usersData = localStore.getItem(USERS_KEY);
       if (!usersData) return;
       const users = JSON.parse(usersData) as User[];
-      
-      const seenNames = new Set<string>();
-      const seenPhones = new Set<string>();
-      const uniqueUsers: User[] = [];
-      const deletedUserIds = new Set<string>();
+      const userIds = new Set(users.map(u => u.id));
 
-      for (const u of users) {
-        const lowerName = u.name.toLowerCase().trim();
-        const phone = u.phone?.trim() || '';
-
-        let isDuplicate = false;
-        if (seenNames.has(lowerName)) {
-          isDuplicate = true;
-        } else if (phone && seenPhones.has(phone)) {
-          isDuplicate = true;
-        }
-
-        if (isDuplicate) {
-          deletedUserIds.add(u.id);
-        } else {
-          seenNames.add(lowerName);
-          if (phone) seenPhones.add(phone);
-          uniqueUsers.push(u);
+      // Clean up embeddings of users that no longer exist
+      const embData = localStore.getItem(EMBEDDINGS_KEY);
+      if (embData) {
+        const embeddings = JSON.parse(embData) as Array<any>;
+        const filteredEmbeddings = embeddings.filter(e => {
+          const idVal = e.user_id !== undefined ? String(e.user_id) : (e.userId ?? '');
+          const targetId = idVal.startsWith('user_') ? idVal.replace('user_', '') : idVal;
+          return userIds.has(idVal) || userIds.has(`user_${idVal}`) || userIds.has(targetId);
+        });
+        if (filteredEmbeddings.length !== embeddings.length) {
+          localStore.setItem(EMBEDDINGS_KEY, JSON.stringify(filteredEmbeddings));
         }
       }
 
-      if (deletedUserIds.size > 0) {
-        localStore.setItem(USERS_KEY, JSON.stringify(uniqueUsers));
-
-        // Delete associated embeddings
-        const embData = localStore.getItem(EMBEDDINGS_KEY);
-        if (embData) {
-          const embeddings = JSON.parse(embData) as Array<any>;
-          const filteredEmbeddings = embeddings.filter(e => {
-            const idVal = e.user_id !== undefined ? String(e.user_id) : (e.userId ?? '');
-            const targetVal = idVal.startsWith('user_') ? idVal : `user_${idVal}`;
-            const targetId = idVal.replace('user_', '');
-            return !deletedUserIds.has(idVal) && !deletedUserIds.has(targetVal) && !deletedUserIds.has(targetId);
-          });
-          localStore.setItem(EMBEDDINGS_KEY, JSON.stringify(filteredEmbeddings));
-        }
-
-        // Delete associated attendance
-        const attData = localStore.getItem(ATTENDANCE_KEY);
-        if (attData) {
-          const attendance = JSON.parse(attData) as Array<any>;
-          const filteredAttendance = attendance.filter(a => !deletedUserIds.has(a.userId));
+      // Clean up attendance of users that no longer exist
+      const attData = localStore.getItem(ATTENDANCE_KEY);
+      if (attData) {
+        const attendance = JSON.parse(attData) as Array<any>;
+        const filteredAttendance = attendance.filter(a => userIds.has(a.userId));
+        if (filteredAttendance.length !== attendance.length) {
           localStore.setItem(ATTENDANCE_KEY, JSON.stringify(filteredAttendance));
         }
       }
@@ -191,27 +166,6 @@ export const storageService = {
       return;
     }
     const users = this.getUsers();
-
-    // Check duplicate name case-insensitively
-    const dupName = users.some(
-      u => u.id !== user.id && u.name.toLowerCase().trim() === user.name.toLowerCase().trim()
-    );
-    if (dupName) {
-      console.warn(`User with name "${user.name}" already exists on Web. Skipping.`);
-      return;
-    }
-
-    // Check duplicate phone
-    const userPhone = user.phone ? user.phone.trim() : '';
-    if (userPhone !== '') {
-      const dupPhone = users.some(
-        u => u.id !== user.id && u.phone && u.phone.trim() === userPhone
-      );
-      if (dupPhone) {
-        console.warn(`User with phone "${userPhone}" already exists on Web. Skipping.`);
-        return;
-      }
-    }
 
     const existingIndex = users.findIndex(u => u.id === user.id);
     if (existingIndex > -1) {
@@ -465,6 +419,7 @@ export const storageService = {
           timestamp: new Date().toISOString(),
           logs: localLogs.filter(l => l.status === 'success'),
           attendance: attendanceRecords.map(r => ({
+            userId: r.userId,
             name: r.userName,
             timeAttended: {
               checkIn: r.checkIn || null,
@@ -611,10 +566,15 @@ export const storageService = {
   // --- SETTINGS ---
   getSettings(): { threshold: number; showConfidence: boolean; awsEndpoint: string; locale: string } {
     const data = localStore.getItem(SETTINGS_KEY);
-    const defaults = { threshold: 0.58, showConfidence: true, awsEndpoint: 'https://api.facegate.io/sync', locale: 'en' };
+    const defaults = { threshold: 0.45, showConfidence: true, awsEndpoint: 'https://api.facegate.io/sync', locale: 'en' };
     if (!data) return defaults;
     try {
-      return { ...defaults, ...JSON.parse(data) };
+      const parsed = JSON.parse(data);
+      if (parsed && parsed.threshold === 0.58) {
+        parsed.threshold = 0.45;
+        localStore.setItem(SETTINGS_KEY, JSON.stringify({ ...defaults, ...parsed }));
+      }
+      return { ...defaults, ...parsed };
     } catch {
       return defaults;
     }

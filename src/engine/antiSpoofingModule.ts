@@ -38,7 +38,7 @@ export const antiSpoofingModule = {
     };
   },
 
-  private preprocess(data: Uint8Array, srcW: number, srcH: number): Float32Array {
+  preprocess(data: Uint8Array, srcW: number, srcH: number): Float32Array {
     // Resize to 256x256 and normalize to [0, 1]
     // For simplicity in this implementation, we assume data is already cropped
     // and we do a simple resize/normalization.

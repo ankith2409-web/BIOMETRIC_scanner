@@ -11,12 +11,15 @@ FaceGate is an offline-first, on-device biometric authentication app that uses c
 ```mermaid
 graph TD
     A[Camera View / Frame Capture] --> B[Image Preprocessing Pipeline]
-    B --> C[BlazeFace Detector]
-    C --> D[MediaPipe FaceMesh Module]
-    D --> E[Liveness & Quality Checks]
-    E --> F[Affine Warping & Alignment]
-    F --> G[MobileFaceNet Embedding]
-    G --> H[Storage & Matcher Service]
+    B --> C{MTCNN Detector}
+    C -- "No Face" --> D[BlazeFace Detector Fallback]
+    C -- "Face Found" --> E[MediaPipe FaceMesh Module]
+    D -- "Face Found" --> E
+    E --> F[Liveness & Quality Checks]
+    F --> G[Anti-Spoofing Model]
+    G --> H[Affine Warping & Alignment]
+    H --> I[MobileFaceNet Embedding]
+    I --> J[Storage & Matcher Service]
 ```
 
 ---
@@ -54,6 +57,8 @@ The processing core which handles all real-time video frame manipulation and cla
 *   [`src/engine/matcher.ts`](file:///c:/Users/akith/OneDrive/Desktop/nhai/src/engine/matcher.ts): Optimized Euclidean distance calculations. Implements early-exit optimizations and a piecewise confidence scoring algorithm mapping target ratios to clean percentages.
 *   [`src/engine/modelLoader.ts`](file:///c:/Users/akith/OneDrive/Desktop/nhai/src/engine/modelLoader.ts): Controls loading sequence and lifetime hooks for TFLite models.
 *   [`src/engine/embeddingValidator.ts`](file:///c:/Users/akith/OneDrive/Desktop/nhai/src/engine/embeddingValidator.ts): Ensures captured biometric descriptors match strict quality parameters before database entry.
+*   [`src/engine/mtcnnModule.ts`](file:///c:/Users/akith/OneDrive/Desktop/nhai/src/engine/mtcnnModule.ts): Multi-task Cascaded Convolutional Networks (MTCNN) implementation (P-Net, R-Net, O-Net) for high-precision face detection.
+*   [`src/engine/antiSpoofingModule.ts`](file:///c:/Users/akith/OneDrive/Desktop/nhai/src/engine/antiSpoofingModule.ts): Passive anti-spoofing liveness model that checks the face crop for presentation attacks (photos, masks, or replay attacks).
 
 ### 🧪 `services/` (Services & Storage)
 
@@ -101,7 +106,7 @@ The processing core which handles all real-time video frame manipulation and cla
 [Image Enhancement] (White Balance, Adaptive LUT Contrast)
         │
         ▼
-[BlazeFace Run] ──(No face found)──> [Status: Align Face]
+[MTCNN Detection Run] ──(No face found)──> [BlazeFace Fallback Run] ──(No face found)──> [Status: Align Face]
         │
         ▼
 [FaceMesh Run] (Locates 468 points)
@@ -110,7 +115,10 @@ The processing core which handles all real-time video frame manipulation and cla
 [Quality Inspection] (Shadows, extreme angle, size) ──(Fails)──> [Feedback Message]
         │
         ▼
-[Liveness Check] (Analyzes EAR for blink / turn) ──(No signal)──> [Prompt Action]
+[Passive Anti-Spoofing Check] ──(Fails)──> [Status: Spoof Detected]
+        │
+        ▼
+[Active Liveness Check] (Analyzes EAR for blink / turn) ──(No signal)──> [Prompt Action]
         │
         ▼
 [Affine Warp] (Normalizes rotation and crops 112x112 image)

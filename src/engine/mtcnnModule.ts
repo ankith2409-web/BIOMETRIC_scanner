@@ -55,7 +55,7 @@ export const mtcnnModule = {
     }).filter(box => box.score >= 0.7);
   },
 
-  private resize(data: Uint8Array, srcW: number, srcH: number, scale: number): Float32Array {
+  resize(data: Uint8Array, srcW: number, srcH: number, scale: number): Float32Array {
     const targetW = Math.floor(srcW * scale);
     const targetH = Math.floor(srcH * scale);
     const out = new Float32Array(targetW * targetH * 3);
@@ -76,7 +76,7 @@ export const mtcnnModule = {
     return out;
   },
 
-  private extractCrop(image: Uint8Array, imgW: number, imgH: number, box: MTCNNBox, size: number): Float32Array {
+  extractCrop(image: Uint8Array, imgW: number, imgH: number, box: MTCNNBox, size: number): Float32Array {
     const out = new Float32Array(size * size * 3);
     const centerX = (box.x + box.width / 2) * imgW;
     const centerY = (box.y + box.height / 2) * imgH;
@@ -99,7 +99,7 @@ export const mtcnnModule = {
     return out;
   },
 
-  private parsePNet(output: any, scale: number): MTCNNBox[] {
+  parsePNet(output: any, scale: number): MTCNNBox[] {
     // Simplified PNet parsing: expects [1, H, W, 2] or similar
     const values = output instanceof Float32Array ? output : (output as any).data;
     if (!values) return [];
@@ -109,12 +109,12 @@ export const mtcnnModule = {
     return []; // Placeholder for detailed tensor parsing
   },
 
-  private parseRNet(output: any): { score: number } {
+  parseRNet(output: any): { score: number } {
     const values = output instanceof Float32Array ? output : (output as any).data;
     return { score: values ? values[1] : 0 };
   },
 
-  private parseONet(output: any): { score: number, landmarks: {x: number, y: number}[] } {
+  parseONet(output: any): { score: number, landmarks: {x: number, y: number}[] } {
     const values = output instanceof Float32Array ? output : (output as any).data;
     return {
       score: values ? values[1] : 0,
@@ -122,7 +122,7 @@ export const mtcnnModule = {
     };
   },
 
-  private nms(boxes: MTCNNBox[], threshold: number): MTCNNBox[] {
+  nms(boxes: MTCNNBox[], threshold: number): MTCNNBox[] {
     const sorted = [...boxes].sort((a, b) => b.score - a.score);
     const result: MTCNNBox[] = [];
     const active = new Array(sorted.length).fill(true);
@@ -140,7 +140,7 @@ export const mtcnnModule = {
     return result;
   },
 
-  private computeIoU(a: MTCNNBox, b: MTCNNBox): number {
+  computeIoU(a: MTCNNBox, b: MTCNNBox): number {
     const xA = Math.max(a.x, b.x);
     const yA = Math.max(a.y, b.y);
     const xB = Math.min(a.x + a.width, b.x + b.width);

@@ -80,7 +80,7 @@ const LANGUAGES = [
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const [threshold, setThreshold] = useState(0.58);
+  const [threshold, setThreshold] = useState(0.45);
   const [endpoint, setEndpoint] = useState('https://api.facegate.io/sync');
   const [showConfidence, setShowConfidence] = useState(true);
   const [showPurgeDialog, setShowPurgeDialog] = useState(false);
