@@ -1,6 +1,6 @@
 import { Asset } from 'expo-asset';
 import { LoadedModels, TFLiteModel } from './modelLoader.types';
-import * as tflite from '@tensorflow/tfjs-tflite';
+import * as tflite from '@tensorflow/tfjs-tflite/dist/tf-tflite.js';
 import * as tf from '@tensorflow/tfjs-core';
 
 const MODEL_URIS = {
@@ -22,8 +22,8 @@ class ModelLoaderSingleton {
 
     onProgress?.(1, 3, 'Preparing web environment');
     
-    // Set WASM path if needed (default usually works fetching from CDN)
-    // tflite.setWasmPath('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.10/dist/');
+    // Set WASM path to fetch from CDN
+    tflite.setWasmPath('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-tflite@0.0.1-alpha.10/wasm/');
 
     const loadModel = async (modelModule: any) => {
       const asset = await Asset.fromModule(modelModule).downloadAsync();
