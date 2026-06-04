@@ -32,15 +32,45 @@ class ModelLoaderSingleton {
         run: async (input: any) => {
           let tensorInput = input;
           // If input is Float32Array, convert it to a tensor.
-          // MobileFaceNet uses [1, 112, 112, 3] and AntiSpoofing uses [1, 256, 256, 3]
+          // MobileFaceNet uses [1, 112, 112, 3] or [2, 112, 112, 3] and AntiSpoofing uses [1, 256, 256, 3]
           if (input instanceof Float32Array) {
-            if (input.length === 112 * 112 * 3) {
-              tensorInput = tf.tensor(input, [1, 112, 112, 3]);
-            } else if (input.length === 256 * 256 * 3) {
-              tensorInput = tf.tensor(input, [1, 256, 256, 3]);
+            const inputShape = (model.inputs && model.inputs[0] && model.inputs[0].shape)
+              ? model.inputs[0].shape
+              : null;
+
+            if (inputShape) {
+              const expectedSize = inputShape.reduce((a: number, b: number) => a * b, 1);
+              if (input.length === expectedSize) {
+                tensorInput = tf.tensor(input, inputShape);
+              } else if (inputShape[0] > 1) {
+                // Batch size > 1, but we only have 1 image. Duplicate to fill batch size.
+                const batchSize = inputShape[0];
+                const singleImageSize = expectedSize / batchSize;
+                if (input.length === singleImageSize) {
+                  const batchInput = new Float32Array(expectedSize);
+                  for (let i = 0; i < batchSize; i++) {
+                    batchInput.set(input, i * singleImageSize);
+                  }
+                  tensorInput = tf.tensor(batchInput, inputShape);
+                } else {
+                  tensorInput = tf.tensor(input);
+                }
+              } else {
+                tensorInput = tf.tensor(input);
+              }
             } else {
-              // fallback
-              tensorInput = tf.tensor(input);
+              // Fallback
+              if (input.length === 112 * 112 * 3) {
+                // Default to batch size of 2 for MobileFaceNet Full
+                const batchInput = new Float32Array(input.length * 2);
+                batchInput.set(input);
+                batchInput.set(input, input.length);
+                tensorInput = tf.tensor(batchInput, [2, 112, 112, 3]);
+              } else if (input.length === 256 * 256 * 3) {
+                tensorInput = tf.tensor(input, [1, 256, 256, 3]);
+              } else {
+                tensorInput = tf.tensor(input);
+              }
             }
           }
           const result = model.predict(tensorInput) as any;
