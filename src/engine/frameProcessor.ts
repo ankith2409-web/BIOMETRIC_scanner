@@ -370,11 +370,11 @@ class FrameProcessorEngine {
     const gapPass = match.gapPass;
 
     // Weights
-    const w_rec = 0.35;
-    const w_live = 0.25;
-    const w_qual = 0.15;
-    const w_temp = 0.15;
-    const w_gap = 0.10;
+    const w_rec = 0.75;
+    const w_live = 0.10;
+    const w_qual = 0.05;
+    const w_temp = 0.05;
+    const w_gap = 0.05;
 
     const finalConfidence =
       w_rec * recogConfidence +
