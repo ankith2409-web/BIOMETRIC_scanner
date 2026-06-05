@@ -236,18 +236,26 @@ class FrameProcessorEngineWeb {
       offscreenCtx.putImageData(imgData, 0, 0);
 
       // Apply adaptive brightness/contrast filters based on average luminance
-      if (avgLuma > 200) {
-        ctx.filter = 'brightness(0.70) contrast(1.25)';
-      } else if (avgLuma > 150) {
-        ctx.filter = 'brightness(0.80) contrast(1.15)';
-      } else if (avgLuma < 80) {
-        ctx.filter = 'brightness(1.20) contrast(1.10)';
+      if (avgLuma > 150) {
+        const enhancedRGB = this.enhanceForHarshLighting(frameRGB);
+        for (let i = 0, j = 0; i < imgData.data.length; i += 4, j += 3) {
+          imgData.data[i] = enhancedRGB[j];
+          imgData.data[i + 1] = enhancedRGB[j + 1];
+          imgData.data[i + 2] = enhancedRGB[j + 2];
+          imgData.data[i + 3] = 255;
+        }
+        offscreenCtx.putImageData(imgData, 0, 0);
+        ctx.drawImage(offscreenCanvas, 0, 0);
+        log?.(`[processor] Harsh/Bright web frame (avgLuma=${avgLuma.toFixed(1)}), applying enhanceForHarshLighting filter`);
       } else {
-        ctx.filter = 'brightness(0.95) contrast(1.05)';
+        if (avgLuma < 80) {
+          ctx.filter = 'brightness(1.20) contrast(1.10)';
+        } else {
+          ctx.filter = 'brightness(0.95) contrast(1.05)';
+        }
+        ctx.drawImage(offscreenCanvas, 0, 0);
+        ctx.filter = 'none';
       }
-
-      ctx.drawImage(offscreenCanvas, 0, 0);
-      ctx.filter = 'none';
 
       // Apply per-channel contrast normalization (stretches histogram to full range)
       faceApiService.applyContrastNormalization(canvas);
@@ -708,6 +716,59 @@ class FrameProcessorEngineWeb {
       },
       process: result,
     };
+  }
+
+  private buildEnhanceLUT(gamma: number): Uint8Array {
+    const lut = new Uint8Array(256);
+    for (let i = 0; i < 256; i++) {
+      let v = i;
+      v = v > 210 ? 210 + (v - 210) * 0.35 : v;
+      v = v < 60 ? v * 1.25 + 8 : v;
+      const norm = Math.max(0, Math.min(1, v / 255));
+      lut[i] = Math.round(Math.pow(norm, gamma) * 255);
+    }
+    return lut;
+  }
+
+  private enhanceForHarshLighting(input: Uint8Array): Uint8Array {
+    if (input.length === 0) return input;
+    const out = new Uint8Array(input.length);
+
+    let sumR = 0;
+    let sumG = 0;
+    let sumB = 0;
+    let lumSum = 0;
+    const pixels = input.length / 3;
+
+    for (let i = 0; i < input.length; i += 3) {
+      const r = input[i];
+      const g = input[i + 1];
+      const b = input[i + 2];
+      sumR += r;
+      sumG += g;
+      sumB += b;
+      lumSum += 0.299 * r + 0.587 * g + 0.114 * b;
+    }
+
+    const meanR = sumR / pixels;
+    const meanG = sumG / pixels;
+    const meanB = sumB / pixels;
+    const meanLum = lumSum / pixels;
+    const gray = (meanR + meanG + meanB) / 3;
+    const gainR = gray / Math.max(meanR, 1);
+    const gainG = gray / Math.max(meanG, 1);
+    const gainB = gray / Math.max(meanB, 1);
+
+    const gamma = meanLum < 95 ? 0.78 : meanLum > 165 ? 1.18 : 1.0;
+    const lut = this.buildEnhanceLUT(gamma);
+
+    for (let i = 0; i < input.length; i += 3) {
+      out[i]     = lut[Math.max(0, Math.min(255, Math.round(input[i] * gainR)))];
+      out[i + 1] = lut[Math.max(0, Math.min(255, Math.round(input[i + 1] * gainG)))];
+      out[i + 2] = lut[Math.max(0, Math.min(255, Math.round(input[i + 2] * gainB)))];
+    }
+
+    return out;
   }
 }
 

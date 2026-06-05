@@ -5,7 +5,6 @@ import { FaceEmbedding, FrameProcessResult, LandmarkPoint, DetectionBox } from '
 import { matchEmbedding } from './matcher';
 import { faceMeshModule } from './faceMeshModule';
 import { antiSpoofingModule } from './antiSpoofingModule';
-import { mtcnnModule } from './mtcnnModule';
 import { storageService } from '../../services/storageService';
 import {
   applyWhiteBalance,
@@ -134,7 +133,7 @@ class FrameProcessorEngine {
     // 1. White balance (Gray World)
     const wbFrame = applyWhiteBalance(frameRGB);
 
-    // Calculate average luma to see if we need to reduce light
+    // Calculate average luma to decide enhancement strategy
     let sumLuma = 0;
     const totalPixels = wbFrame.length / 3;
     for (let i = 0; i < wbFrame.length; i += 12) {
@@ -142,30 +141,25 @@ class FrameProcessorEngine {
     }
     const avgLuma = sumLuma / (totalPixels / 4);
 
-    let processedFrame = wbFrame;
-    if (avgLuma > 200) {
-      processedFrame = applyGammaCorrection(wbFrame, 0.6);
-      log?.(`[processor] Very bright native frame (avgLuma=${avgLuma.toFixed(1)}), applying gamma 0.6`);
-    } else if (avgLuma > 150) {
-      processedFrame = applyGammaCorrection(wbFrame, 0.8);
-      log?.(`[processor] Bright native frame (avgLuma=${avgLuma.toFixed(1)}), applying gamma 0.8`);
+    let enhanced: Uint8Array;
+    if (avgLuma > 150) {
+      // Harsh lighting: use LUT-based highlight compression + shadow lift
+      enhanced = this.enhanceForHarshLighting(frameRGB);
+      log?.(`[processor] Harsh/Bright native frame (avgLuma=${avgLuma.toFixed(1)}), applying enhanceForHarshLighting`);
     } else if (avgLuma < 80) {
-      processedFrame = applyGammaCorrection(wbFrame, 1.4);
-      log?.(`[processor] Dark native frame (avgLuma=${avgLuma.toFixed(1)}), applying gamma 1.4`);
+      // Dark frame: gamma brighten + CLAHE for local contrast
+      const gammaCorrected = applyGammaCorrection(wbFrame, 1.4);
+      enhanced = applyCLAHE(gammaCorrected, 128, 128, 2.0, [8, 8]);
+      log?.(`[processor] Dark native frame (avgLuma=${avgLuma.toFixed(1)}), applying gamma 1.4 + CLAHE`);
+    } else {
+      // Normal lighting (80-150): white-balanced frame is sufficient — skip CLAHE overhead
+      enhanced = wbFrame;
     }
-
-    // 2. CLAHE (Adaptive Histogram Equalization)
-    const enhanced = applyCLAHE(processedFrame, 128, 128, 2.0, [8, 8]);
 
     const t0 = Date.now();
-    // Try MTCNN first for high-precision detection
-    let detections = await mtcnnModule.detect(enhanced, 128, 128);
-
-    // Fallback to BlazeFace if MTCNN finds nothing
-    if (!detections.length) {
-      const detectOut = await models.blazeFace.run(enhanced);
-      detections = this.parseAllDetections(detectOut);
-    }
+    // BlazeFace face detection (128x128 input)
+    const detectOut = await models.blazeFace.run(enhanced);
+    const detections = this.parseAllDetections(detectOut);
     timing.detect = toMs(t0);
     if (!detections.length) {
       return { faceFound: false, livenessPass: false, timing };
@@ -218,7 +212,7 @@ class FrameProcessorEngine {
     const meshResult = faceMeshModule.process(rawMesh, detection, enhanced, 128, 128);
 
     // Calculate lighting quality score
-    const lighting = getLightingScore(cropped192, processedFrame);
+    const lighting = getLightingScore(cropped192, enhanced);
 
     let finalQualityPass = meshResult.qualityPass;
     let finalQualityMessage = meshResult.qualityMessage;

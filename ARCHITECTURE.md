@@ -11,10 +11,9 @@ FaceGate is an offline-first, on-device biometric authentication app that uses c
 ```mermaid
 graph TD
     A[Camera View / Frame Capture] --> B[Image Preprocessing Pipeline]
-    B --> C{MTCNN Detector}
-    C -- "No Face" --> D[BlazeFace Detector Fallback]
+    B --> C[BlazeFace Detector]
+    C -- "No Face" --> D[Status: Align Face]
     C -- "Face Found" --> E[MediaPipe FaceMesh Module]
-    D -- "Face Found" --> E
     E --> F[Liveness & Quality Checks]
     F --> G[Anti-Spoofing Model]
     G --> H[Affine Warping & Alignment]
@@ -54,7 +53,7 @@ The processing core which handles all real-time video frame manipulation and cla
 *   [`src/engine/alignment.ts`](file:///c:/Users/akith/OneDrive/Desktop/nhai/src/engine/alignment.ts): Utilities to isolate landmark points and normalize raw 112x112 face buffers.
 *   [`src/engine/imagePreprocessing.ts`](file:///c:/Users/akith/OneDrive/Desktop/nhai/src/engine/imagePreprocessing.ts): Preprocessing operations (Gray World white-balance, CLAHE adaptive histogram equalization, lighting scores, and custom LUT-based contrast enhancement).
 *   [`src/engine/livenessChecker.ts`](file:///c:/Users/akith/OneDrive/Desktop/nhai/src/engine/livenessChecker.ts): Manages state and verification criteria for multi-step active liveness challenges.
-*   [`src/engine/matcher.ts`](file:///c:/Users/akith/OneDrive/Desktop/nhai/src/engine/matcher.ts): Optimized Euclidean distance calculations. Implements early-exit optimizations and a piecewise confidence scoring algorithm mapping target ratios to clean percentages.
+*   [`src/engine/matcher.ts`](file:///c:/Users/akith/OneDrive/Desktop/nhai/src/engine/matcher.ts): Optimized Euclidean distance calculations. Implements early-exit optimizations with periodic partial-sum checks every 16 dimensions, per-user best tracking, and a linear confidence scoring algorithm that properly scales from 100% at distance 0 to 0% at threshold.
 *   [`src/engine/modelLoader.ts`](file:///c:/Users/akith/OneDrive/Desktop/nhai/src/engine/modelLoader.ts): Controls loading sequence and lifetime hooks for TFLite models.
 *   [`src/engine/embeddingValidator.ts`](file:///c:/Users/akith/OneDrive/Desktop/nhai/src/engine/embeddingValidator.ts): Ensures captured biometric descriptors match strict quality parameters before database entry.
 *   [`src/engine/mtcnnModule.ts`](file:///c:/Users/akith/OneDrive/Desktop/nhai/src/engine/mtcnnModule.ts): Multi-task Cascaded Convolutional Networks (MTCNN) implementation (P-Net, R-Net, O-Net) for high-precision face detection.
@@ -103,10 +102,10 @@ The processing core which handles all real-time video frame manipulation and cla
 [Camera frame captured]
         │
         ▼
-[Image Enhancement] (White Balance, Adaptive LUT Contrast)
+[Image Enhancement] (White Balance, Adaptive LUT Contrast — CLAHE only for dark frames)
         │
         ▼
-[MTCNN Detection Run] ──(No face found)──> [BlazeFace Fallback Run] ──(No face found)──> [Status: Align Face]
+[BlazeFace Detection Run] ──(No face found)──> [Status: Align Face]
         │
         ▼
 [FaceMesh Run] (Locates 468 points)

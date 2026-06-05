@@ -4,14 +4,8 @@ import * as tflite from '@tensorflow/tfjs-tflite/dist/tf-tflite.js';
 import * as tf from '@tensorflow/tfjs-core';
 
 const MODEL_URIS = {
-  blazeFace: require('../../assets/models/blazeface.tflite'),
-  faceMesh: require('../../assets/models/face_mesh.tflite'),
-  mobileFaceNet: require('../../assets/models/mobilefacenet_int8.tflite'),
   mobileFaceNetFull: require('../../assets/models/MobileFaceNet_Full.tflite'),
   antiSpoofing: require('../../assets/models/FaceAntiSpoofing.tflite'),
-  pNet: require('../../assets/models/pnet.tflite'),
-  rNet: require('../../assets/models/rnet.tflite'),
-  oNet: require('../../assets/models/onet.tflite'),
 } as const;
 
 class ModelLoaderSingleton {
@@ -88,7 +82,7 @@ class ModelLoaderSingleton {
           }
           // Some tfjs-tflite models return dictionary of tensors
           if (result && typeof result === 'object') {
-            const keys = Object.keys(result);
+            const keys = Object.keys(result).sort();
             const outArr = [];
             for (const k of keys) {
               outArr.push(await result[k].data());
@@ -111,16 +105,14 @@ class ModelLoaderSingleton {
       loadModel(MODEL_URIS.antiSpoofing)
     ]);
 
-    // Keep mocks for models not yet used in web
+    // BlazeFace, FaceMesh, and MobileFaceNet (int8) are not used on web —
+    // face-api.js handles detection & landmarks, MobileFaceNet_Full handles embeddings.
     this.models = {
       blazeFace: { run: async () => ({}) },
       faceMesh: { run: async () => ({}) },
-      mobileFaceNet: { run: async () => ({}) },
+      mobileFaceNet: mobileFaceNetFull,
       mobileFaceNetFull,
       antiSpoofing,
-      pNet: { run: async () => ({}) },
-      rNet: { run: async () => ({}) },
-      oNet: { run: async () => ({}) },
     };
     
     onProgress?.(3, 3, 'Ready');

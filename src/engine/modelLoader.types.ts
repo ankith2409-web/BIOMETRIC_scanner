@@ -9,7 +9,4 @@ export interface LoadedModels {
   mobileFaceNet: TFLiteModel;
   mobileFaceNetFull: TFLiteModel;
   antiSpoofing: TFLiteModel;
-  pNet: TFLiteModel;
-  rNet: TFLiteModel;
-  oNet: TFLiteModel;
 }

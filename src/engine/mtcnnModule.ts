@@ -1,6 +1,6 @@
 import { TFLiteModel } from './modelLoader.types';
-import { modelLoader } from './modelLoader';
-import { DetectionBox } from '../types/face';
+// NOTE: This module is deprecated and unused. BlazeFace is the sole detector.
+// Kept for reference only.
 
 export interface MTCNNBox {
   x: number;
@@ -12,47 +12,12 @@ export interface MTCNNBox {
 }
 
 export const mtcnnModule = {
-  async detect(image: Uint8Array, width: number, height: number): Promise<MTCNNBox[]> {
-    const models = await modelLoader.loadAll();
-    const { pNet, rNet, oNet } = models;
-
-    // 1. P-Net candidate generation (simplified pyramid)
-    // In a real implementation, we'd use multiple scales.
-    // For now, we'll start with a few key scales.
-    const scales = [1.0, 0.709, 0.503];
-    let allBoxes: MTCNNBox[] = [];
-
-    for (const scale of scales) {
-      const resized = this.resize(image, width, height, scale);
-      const output = await pNet.run(resized);
-      const boxes = this.parsePNet(output, scale);
-      allBoxes = [...allBoxes, ...boxes];
-    }
-
-    // NMS and filtering
-    let filtered = this.nms(allBoxes, 0.7);
-
-    // 2. R-Net refinement
-    const rNetInputs = filtered.map(box => this.extractCrop(image, width, height, box, 24));
-    const rNetResults = await Promise.all(rNetInputs.map(input => rNet.run(input)));
-
-    filtered = filtered.filter((box, i) => {
-      const res = this.parseRNet(rNetResults[i]);
-      return res.score >= 0.7;
-    });
-
-    // 3. O-Net final pass
-    const oNetInputs = filtered.map(box => this.extractCrop(image, width, height, box, 48));
-    const oNetResults = await Promise.all(oNetInputs.map(input => oNet.run(input)));
-
-    return filtered.map((box, i) => {
-      const res = this.parseONet(oNetResults[i]);
-      return {
-        ...box,
-        score: res.score,
-        landmarks: res.landmarks
-      };
-    }).filter(box => box.score >= 0.7);
+  /**
+   * @deprecated MTCNN is no longer used. BlazeFace handles all detection.
+   * This method always returns an empty array.
+   */
+  async detect(_image: Uint8Array, _width: number, _height: number): Promise<MTCNNBox[]> {
+    return [];
   },
 
   resize(data: Uint8Array, srcW: number, srcH: number, scale: number): Float32Array {

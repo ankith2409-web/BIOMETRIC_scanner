@@ -1,6 +1,24 @@
 import { modelLoader } from './modelLoader';
 import { TFLiteModel } from './modelLoader.types';
 
+function extractFloatArray(raw: unknown): Float32Array | null {
+  if (!raw) return null;
+  if (raw instanceof Float32Array) return raw;
+  if (Array.isArray(raw) && raw.length > 0) {
+    if (typeof raw[0] === 'number') return Float32Array.from(raw as number[]);
+    const nested = raw.find((v) => Array.isArray(v) || v instanceof Float32Array);
+    if (nested instanceof Float32Array) return nested;
+    if (Array.isArray(nested)) return Float32Array.from(nested as number[]);
+  }
+  if (typeof raw === 'object') {
+    const candidate = (raw as Record<string, unknown>).output
+      ?? (raw as Record<string, unknown>).outputs
+      ?? (raw as Record<string, unknown>).data;
+    return extractFloatArray(candidate);
+  }
+  return null;
+}
+
 export const antiSpoofingModule = {
   async check(faceCrop: Uint8Array, width: number, height: number): Promise<{ isSpoof: boolean; score: number }> {
     const models = await modelLoader.loadAll();
@@ -13,17 +31,28 @@ export const antiSpoofingModule = {
     // Using react-native-fast-tflite, we get them as an array of outputs
     const outputs = await model.run(input);
 
-    // Depending on how fast-tflite returns multiple outputs, it might be an array of Float32Arrays
-    // based on the Java code:
-    // outputs.put(interpreter.getOutputIndex("Identity"), clss_pred);
-    // outputs.put(interpreter.getOutputIndex("Identity_1"), leaf_node_mask);
+    let outputsArray: unknown[] | null = null;
+    if (Array.isArray(outputs)) {
+      outputsArray = outputs;
+    } else if (outputs && typeof outputs === 'object') {
+      const candidate = (outputs as Record<string, unknown>).outputs
+        ?? (outputs as Record<string, unknown>).output
+        ?? (outputs as Record<string, unknown>).data;
+      if (Array.isArray(candidate)) {
+        outputsArray = candidate;
+      }
+    }
 
-    if (!Array.isArray(outputs) || outputs.length < 2) {
+    if (!outputsArray || outputsArray.length < 2) {
       return { isSpoof: false, score: 0 };
     }
 
-    const clssPred = outputs[0] as Float32Array;
-    const leafNodeMask = outputs[1] as Float32Array;
+    const clssPred = extractFloatArray(outputsArray[0]);
+    const leafNodeMask = extractFloatArray(outputsArray[1]);
+
+    if (!clssPred || !leafNodeMask) {
+      return { isSpoof: false, score: 0 };
+    }
 
     let score = 0;
     for (let i = 0; i < 8; i++) {
