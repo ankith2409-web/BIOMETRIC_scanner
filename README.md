@@ -30,6 +30,7 @@ graph TD
   - **BlazeFace**: Real-time bounding box detection optimized for mobile CPU/GPU.
   - **MediaPipe FaceMesh**: Tracks 468 3D landmarks for fine-grained alignment and gesture detection.
   - **MobileFaceNet (Int8 Quantized)**: Generates highly discriminative 128-dimensional embedding vectors for matching.
+  - **Web TFLite Support**: Fully integrated pre-bundled web client using `tfjs-tflite` to run optimized custom TFLite models and handle dynamic batch sizes natively in the browser.
 - 🧬 **Robust Active Liveness Challenge Engine**:
   - Monitors **Eye Aspect Ratio (EAR)** for blink detection.
   - Detects smiling and dynamic head rotations (left/right yaw, pitch) to block spoofing attacks (e.g., photos or video playback).
@@ -128,7 +129,7 @@ The app uses heavily optimized model architectures to achieve low-latency perfor
 ## 🔒 Biometric Security Details
 
 FaceGate secures templates using the **Euclidean Distance** formula between candidate vectors and stored templates. The match logic features early-exits to speed up processing:
-- **Calibrated Verification Threshold**: Default threshold is set to `0.40`, optimized to minimize False Accept Rate (FAR) to $<1\%$ and False Reject Rate (FRR) to $<5\%$.
+- **Calibrated Verification Threshold**: Default confidence threshold is strictly enforced at **95%** (distance threshold ~`0.40`), optimized to minimize False Accept Rate (FAR) to $<1\%$ and False Reject Rate (FRR) to $<5\%$.
 - **Burst Enrollment**: Captures 1 base embedding + up to 8 auxiliary angle embeddings during registration to ensure high-accuracy authentication from multiple head directions.
 
 ---
