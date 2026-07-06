@@ -499,11 +499,22 @@ class FrameProcessorEngineWeb {
         embedding = this.l2Normalize(Float32Array.from(detection.descriptor));
       }
 
-      const livenessResult = this.liveness.update(returnedLandmarks, ear, embedding);
+      const livenessResult = this.liveness.update(
+        returnedLandmarks,
+        ear,
+        embedding,
+        meshResult.result.livenessSignal.smileDetected,
+        meshResult.result.livenessSignal.headTurnLeftDetected,
+        meshResult.result.livenessSignal.headTurnRightDetected
+      );
 
       const sig = {
         ...meshResult.result.livenessSignal,
         blinkDetected: livenessResult.blinkDetected,
+        smileDetected: livenessResult.smileDetected,
+        headTurnLeftDetected: livenessResult.headTurnLeftDetected,
+        headTurnRightDetected: livenessResult.headTurnRightDetected,
+        headTurnDetected: livenessResult.headTurnLeftDetected || livenessResult.headTurnRightDetected,
       };
 
       log?.(`[processor] Done. Quality: ${finalQualityPass ? 'PASS' : 'FAIL'} (${finalQualityMessage ?? 'none'}), Liveness: ${livenessResult.livenessPass ? 'PASS' : 'FAIL'}, time: ${timing.total}ms`);

@@ -79,7 +79,15 @@ export class LivenessChecker {
   // Camera freeze / Web lag state
   private consecutiveDuplicates = 0;
   private readonly duplicateFreezeThreshold = 10;
-  private lastResult: { livenessScore: number; livenessPass: boolean; isSpoof: boolean; blinkDetected: boolean } | null = null;
+  private lastResult: {
+    livenessScore: number;
+    livenessPass: boolean;
+    isSpoof: boolean;
+    blinkDetected: boolean;
+    smileDetected: boolean;
+    headTurnLeftDetected: boolean;
+    headTurnRightDetected: boolean;
+  } | null = null;
 
   // Simplified telemetry fields for HUD parity
   private currentRigidityVariance = 0.05;
@@ -110,8 +118,19 @@ export class LivenessChecker {
   update(
     landmarks: LandmarkPoint[],
     ear: number,
-    embedding?: Float32Array
-  ): { livenessScore: number; livenessPass: boolean; isSpoof: boolean; blinkDetected: boolean } {
+    embedding?: Float32Array,
+    smileDetected = false,
+    headTurnLeftDetected = false,
+    headTurnRightDetected = false
+  ): {
+    livenessScore: number;
+    livenessPass: boolean;
+    isSpoof: boolean;
+    blinkDetected: boolean;
+    smileDetected: boolean;
+    headTurnLeftDetected: boolean;
+    headTurnRightDetected: boolean;
+  } {
     
     // 0. Camera lag duplicate check
     let isDuplicate = false;
@@ -135,6 +154,9 @@ export class LivenessChecker {
           livenessPass: false,
           isSpoof: true,
           blinkDetected: false,
+          smileDetected: false,
+          headTurnLeftDetected: false,
+          headTurnRightDetected: false,
         };
         this.lastResult = result;
         return result;
@@ -144,6 +166,9 @@ export class LivenessChecker {
         livenessPass: false,
         isSpoof: false,
         blinkDetected: false,
+        smileDetected: false,
+        headTurnLeftDetected: false,
+        headTurnRightDetected: false,
       };
     }
     
@@ -187,15 +212,25 @@ export class LivenessChecker {
     const blinkDetected = this.blinkActiveFrames > 0;
     const poseMotionDetected = totalPoseStd >= 0.05 && this.yawHistory.length >= 3;
 
-    // Liveness passes if EITHER a natural blink OR head motion is registered
-    const livenessPass = blinkDetected || poseMotionDetected;
-    const isSpoof = false; // We rely on the livenessPass check failing for static photos
+    // Detect rigid photo spoofing (very low variance over frames)
+    let isRigidSpoof = false;
+    if (this.yawHistory.length >= this.poseWindowSize) {
+      if (totalPoseStd < 0.015) {
+        isRigidSpoof = true;
+      }
+    }
+
+    // Liveness passes if EITHER a natural blink OR head motion OR active gesture is registered
+    const livenessPass = (blinkDetected || poseMotionDetected || smileDetected || headTurnLeftDetected || headTurnRightDetected) && !isRigidSpoof;
+    const isSpoof = isRigidSpoof; 
 
     this.currentRigidityVariance = totalPoseStd; // Use pose variance for diagnostic telemetry
     this.currentEmbeddingVariance = yawStd;
     this.currentLandmarkMotionScore = pitchStd;
     
-    if (!livenessPass) {
+    if (isRigidSpoof) {
+      this.currentRejectionReason = 'Spoof detected (rigid face / photo pattern)';
+    } else if (!livenessPass) {
       this.currentRejectionReason = 'Liveness failed (no blink or natural head motion detected)';
     } else {
       this.currentRejectionReason = '';
@@ -203,14 +238,23 @@ export class LivenessChecker {
 
     // 4. Compute Unified Liveness Score (genuine, non-forced)
     const blinkScore = blinkDetected ? 1.0 : 0.0;
+    const smileScore = smileDetected ? 1.0 : 0.0;
+    const headTurnScore = (headTurnLeftDetected || headTurnRightDetected) ? 1.0 : 0.0;
     const poseScore = Math.min(1.0, totalPoseStd / 1.0);
-    const livenessScore = 0.5 * blinkScore + 0.5 * poseScore;
+    
+    let livenessScore = 0.3 * blinkScore + 0.3 * smileScore + 0.2 * headTurnScore + 0.2 * poseScore;
+    if (isRigidSpoof) {
+      livenessScore = 0.0;
+    }
 
     const result = {
       livenessScore: Math.max(0.0, Math.min(1.0, livenessScore)),
       livenessPass,
       isSpoof,
       blinkDetected,
+      smileDetected,
+      headTurnLeftDetected,
+      headTurnRightDetected,
     };
     this.lastResult = result;
     return result;

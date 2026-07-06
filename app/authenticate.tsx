@@ -365,12 +365,29 @@ export default function AuthenticateScreen() {
         }
         setQualityPrompt(msg);
         lastRejectionReason.current = msg;
+        if (authState === 'liveness' || authState === 'processing') {
+          setAuthState('scanning');
+        }
         return;
       }
 
-      setQualityPrompt('Verifying presence...');
-      if (authState === 'scanning' || authState === 'liveness') {
-        setAuthState('processing');
+      // Check and update interactive liveness challenge state
+      if (authState === 'scanning') {
+        setAuthState('liveness');
+        setQualityPrompt(t(challengePromptKey(currentChallenge)));
+        return;
+      }
+
+      if (authState === 'liveness') {
+        const passed = isChallengePassed(currentChallenge, process.livenessSignal);
+        if (passed) {
+          challengePassedRef.current = true;
+          setAuthState('processing');
+          setQualityPrompt('Verifying presence...');
+        } else {
+          setQualityPrompt(t(challengePromptKey(currentChallenge)));
+          return; // Do not proceed to embedding match until challenge is passed
+        }
       }
 
       // Telemetry update

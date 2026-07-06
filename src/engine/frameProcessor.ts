@@ -257,10 +257,21 @@ class FrameProcessorEngine {
     timing.embed = toMs(t3);
     timing.total = toMs(t0);
 
-    const livenessResult = this.liveness.update(landmarks, ear, embedding);
+    const livenessResult = this.liveness.update(
+      landmarks,
+      ear,
+      embedding,
+      meshResult.result.livenessSignal.smileDetected,
+      meshResult.result.livenessSignal.headTurnLeftDetected,
+      meshResult.result.livenessSignal.headTurnRightDetected
+    );
     const sig = {
       ...meshResult.result.livenessSignal,
       blinkDetected: livenessResult.blinkDetected,
+      smileDetected: livenessResult.smileDetected,
+      headTurnLeftDetected: livenessResult.headTurnLeftDetected,
+      headTurnRightDetected: livenessResult.headTurnRightDetected,
+      headTurnDetected: livenessResult.headTurnLeftDetected || livenessResult.headTurnRightDetected,
     };
 
     return {
